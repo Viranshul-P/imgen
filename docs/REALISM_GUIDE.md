@@ -79,6 +79,7 @@ The JPEG sampling is verified 2×2,1×1,1×1 (4:2:0), with no EXIF.
 Options: `--size auto|4:5|9:16|original`, `--quality 92`, `--seed N`, `--output file.jpg` (single input), `--bundle out.zip`.
 
 ## Tuning tips
+- **Use Flux (Engine A) for anything that should pass as a real photo.** SDXL renders (832×1216) look smooth and "2023 AI", with a small, mushy face. Flux + the two amateur/realism LoRAs + the **hi-res pass** (1344×1728 re-sample, default on) is the realistic setup. It takes ~4–6 min per image on this laptop; generate drafts on SDXL, then final posts on Flux.
 - **Still looks "AI"?** Fix it at generation time first: lower Flux guidance (2.2–2.6), raise the amateur LoRA, remove the words flagged by the sheen warning, and use a scene kit with clutter in the background. The finisher is the last 20 %.
 - **Grain too visible on social media?** Instagram re-compresses, so keep the intensity at 0.6–0.8 rather than 1.0.
 - **Skin looks waxy after finishing?** Raise `sharpen` and lower `lens`. Lens softening comes before sharpening on purpose: it removes synthetic edges, and the sharpen stage then restores phone-style edge crunch.

@@ -61,6 +61,7 @@ export function PromptStudio() {
   const [checkpoint, setCheckpoint] = React.useState("");
   const [realismLoras, setRealismLoras] = React.useState(true);
   const [faceFix, setFaceFix] = React.useState(true);
+  const [hires, setHires] = React.useState(true);
   const [phoneLook, setPhoneLook] = React.useState(false);
   const [phonePreset, setPhonePreset] = React.useState<FinisherPreset>("iphone_indoor_warm");
   const [showAdvanced, setShowAdvanced] = React.useState(false);
@@ -120,6 +121,7 @@ export function PromptStudio() {
         options: {
           ...DEFAULT_JOB_OPTIONS,
           enableFaceDetailer: faceFix,
+          enableHiresFix: hires,
           enablePhoneFinisher: phoneLook,
           finisherPreset: phonePreset,
         },
@@ -168,7 +170,7 @@ export function PromptStudio() {
                 className={cn("rounded-lg border p-3 text-left text-sm transition-colors", engine === e ? "border-primary bg-primary/10" : "border-border hover:bg-secondary")}
               >
                 <div className="font-medium">{e === "A" ? "Flux" : "SDXL"}</div>
-                <div className="text-xs text-muted-foreground">{e === "A" ? "Most realistic, understands sentences - ~2-3 min" : "Fast, likes short phrases - ~30 s"}</div>
+                <div className="text-xs text-muted-foreground">{e === "A" ? "Most realistic - use this for posts. Understands sentences, ~3-5 min" : "Quick drafts, likes short phrases, ~1 min. Looks more 'AI'"}</div>
               </button>
             ))}
           </div>
@@ -224,6 +226,12 @@ export function PromptStudio() {
                 hint="Extra model weights that make Flux look like a real phone photo instead of glossy AI art"
               />
             ) : null}
+            <Checkbox
+              checked={hires}
+              onChange={setHires}
+              label={`High resolution pass (1.5x, real detail) - adds ~${engine === "A" ? "1-2 min" : "20 s"}`}
+              hint="Enlarges the image 1.5x and lets the model redraw skin, eyes, hair and fabric at the bigger size"
+            />
             <Checkbox checked={faceFix} onChange={setFaceFix} label="Sharpen face details (FaceDetailer)" hint="Re-draws the face area at higher detail after the image is made" />
             <div className="flex flex-wrap items-center gap-2">
               <Checkbox checked={phoneLook} onChange={setPhoneLook} label="Also save a Phone Look version" />
@@ -247,7 +255,7 @@ export function PromptStudio() {
               ) : (
                 <>
                   <Field label={`CFG ${cfg.toFixed(1)}`}>
-                    <Slider value={cfg} min={3} max={8} step={0.1} onChange={setCfg} label="cfg" format={(v) => v.toFixed(1)} />
+                    <Slider value={cfg} min={4.5} max={5.5} step={0.1} onChange={setCfg} label="cfg" format={(v) => v.toFixed(1)} />
                   </Field>
                   <Field label="SDXL model">
                     <Select value={checkpoint} onChange={(e) => setCheckpoint(e.target.value)}>

@@ -232,9 +232,17 @@ export class ComfyClient {
       settled = true;
       socket?.close();
     }
-    const entry = await this.history(promptId);
-    const images: OutputImage[] = [];
-    for (const out of Object.values(entry?.outputs ?? {})) images.push(...(out.images ?? []).filter((i) => i.type === "output"));
+    // ComfyUI can announce completion over the socket slightly before /history holds the outputs
+    // (seen under heavy RAM pressure on long Flux hi-res runs), so retry briefly before concluding
+    // that nothing was saved.
+    let images: OutputImage[] = [];
+    for (let attempt = 0; attempt < HISTORY_RETRIES; attempt++) {
+      const entry = await this.history(promptId).catch(() => undefined);
+      images = [];
+      for (const out of Object.values(entry?.outputs ?? {})) images.push(...(out.images ?? []).filter((i) => i.type === "output"));
+      if (images.length > 0) break;
+      await sleep(HISTORY_RETRY_MS);
+    }
     return { promptId, images, durationMs: Date.now() - started };
   }
 
@@ -280,6 +288,10 @@ export function summarizeRejection(details: unknown): string {
   }
   return parts.join("; ") || JSON.stringify(details).slice(0, 500);
 }
+
+/** /history polling after completion: up to 20 x 500 ms for outputs to appear. */
+const HISTORY_RETRIES = 20;
+const HISTORY_RETRY_MS = 500;
 
 export function sleep(ms: number): Promise<void> {
   return new Promise((resolve) => setTimeout(resolve, ms));

@@ -54,6 +54,8 @@ export interface JobOptions {
   /** ReActor is installed but deliberately not wired into PersonaForge graphs; true is rejected. */
   enableReactorSwap: boolean;
   enableUpscale: boolean;
+  /** Hi-res second pass (1.5x re-sample at low denoise) on Engines A/B - real detail, not just sharpening. */
+  enableHiresFix: boolean;
   enablePhoneFinisher: boolean;
   finisherPreset: FinisherPreset;
   finisherIntensity: number;
@@ -65,6 +67,7 @@ export const DEFAULT_JOB_OPTIONS: JobOptions = {
   enableCrossEngineFaceLock: false,
   enableReactorSwap: false,
   enableUpscale: false,
+  enableHiresFix: true,
   enablePhoneFinisher: true,
   finisherPreset: "iphone_indoor_warm",
   finisherIntensity: 0.7,

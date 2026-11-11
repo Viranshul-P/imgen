@@ -33,3 +33,12 @@ Full-size runs (Phase 7, 2026-11-11, through the queue worker, Phone Look Finish
 **VRAM flush guard verified:** the worker logged `VRAM flush: SDXL:RealVisXL_V5.0_fp16 -> FLUX_GGUF:flux1-dev-Q4_K_S` before Engine A, and `FLUX_GGUF -> SDXL` straight after it (`WorkerState.flushCount` = 2). Same-engine jobs reused the loaded model without flushing (the 2nd–4th face candidates are ~5 s faster than the 1st).
 
 **Engine A RAM note:** with Chrome open (≈4–5 GB RAM free) the Flux job took 165 s end-to-end, partly page-file bound while loading. With ~10 GB free, expect noticeably faster loads. The sampling itself kept the GPU at ~97 %.
+
+## Hi-res second pass (added 2026-11-11, on by default for Engines A/B)
+| Job | Base → hi-res | Time | Peak VRAM | Notes |
+|---|---|---|---|---|
+| A — Flux + realism LoRAs + hi-res (12 steps @ 0.35) + FaceDetailer | 896×1152 → **1344×1728** | **350 s** | 6,583 MB | ~4–5 GB RAM free (Chrome open); the base pass alone was 165 s in Phase 7 |
+| B — SDXL smoke with hi-res | 256 → 384 (2 steps) | 8.8 s | — | full-size SDXL hi-res target is 1248×1824 |
+
+The old `upscale` feature only model-upscales and resizes (sharper, but no new detail). `hiresFix` re-samples the 1.5x image at denoise 0.35, so skin, eyes, hair and fabric are actually redrawn at the larger size before FaceDetailer runs on the bigger face.
+

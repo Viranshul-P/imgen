@@ -31,6 +31,10 @@
       "FACE_DETECTOR": { "type": "string", "default": "bbox/face_yolov8m.pt", "modelCategory": "ultralytics" },
       "HAND_DETECTOR": { "type": "string", "default": "bbox/hand_yolov8n.pt", "modelCategory": "ultralytics" },
       "UPSCALE_MODEL": { "type": "string", "default": "4x-UltraSharp.pth", "modelCategory": "upscale_models" },
+      "HIRES_WIDTH": { "type": "int", "default": 1248 },
+      "HIRES_HEIGHT": { "type": "int", "default": 1824 },
+      "HIRES_STEPS": { "type": "int", "default": 20 },
+      "HIRES_DENOISE": { "type": "float", "default": 0.35, "min": 0.15, "max": 0.6 },
       "OUTPUT_WIDTH": { "type": "int", "default": 1080 },
       "OUTPUT_HEIGHT": { "type": "int", "default": 1350 },
       "FILENAME_PREFIX": { "type": "string", "default": "personaforge/engine_b" }
@@ -38,6 +42,7 @@
     "features": {
       "controlnet": { "default": false, "description": "Pose/Depth ControlNet from a reference image (variant selected by controlMode)" },
       "ipadapter": { "default": false, "description": "IP-Adapter FaceID Plus v2 identity from FACE_REFERENCE_IMAGE" },
+      "hiresFix": { "default": true, "description": "Hi-res second pass: 4x model upscale to 1.5x, then a low-denoise SDXL re-sample that redraws real detail at the larger size" },
       "faceDetailer": { "default": true, "description": "FaceDetailer (face_yolov8m)" },
       "handDetailer": { "default": false, "description": "Second detailer pass on hands (hand_yolov8n)" },
       "upscale": { "default": false, "description": "4x model upscale then lanczos downscale to the social target size" }
@@ -176,6 +181,52 @@
     "inputs": { "samples": ["31", 0], "vae": ["2", 0] },
     "_meta": { "title": "Decode" }
   },
+  "33": {
+    "class_type": "UpscaleModelLoader",
+    "inputs": { "model_name": "{{UPSCALE_MODEL}}" },
+    "_meta": { "title": "Hi-res: upscale model", "pf": { "optional": "hiresFix" } }
+  },
+  "34": {
+    "class_type": "ImageUpscaleWithModel",
+    "inputs": { "upscale_model": ["33", 0], "image": ["32", 0] },
+    "_meta": { "title": "Hi-res: model upscale", "pf": { "optional": "hiresFix", "bypass": { "0": "image" } } }
+  },
+  "35": {
+    "class_type": "ImageScale",
+    "inputs": { "image": ["34", 0], "upscale_method": "lanczos", "width": "{{HIRES_WIDTH}}", "height": "{{HIRES_HEIGHT}}", "crop": "disabled" },
+    "_meta": { "title": "Hi-res: scale to 1.5x", "pf": { "optional": "hiresFix", "bypass": { "0": "image" } } }
+  },
+  "36": {
+    "class_type": "VAEEncode",
+    "inputs": { "pixels": ["35", 0], "vae": ["2", 0] },
+    "_meta": { "title": "Hi-res: encode", "pf": { "optional": "hiresFix" } }
+  },
+  "37": {
+    "class_type": "KSampler",
+    "inputs": {
+      "model": ["22", 0],
+      "seed": "{{SEED}}",
+      "steps": "{{HIRES_STEPS}}",
+      "cfg": "{{CFG}}",
+      "sampler_name": "{{SAMPLER}}",
+      "scheduler": "{{SCHEDULER}}",
+      "positive": ["13", 0],
+      "negative": ["13", 1],
+      "latent_image": ["36", 0],
+      "denoise": "{{HIRES_DENOISE}}"
+    },
+    "_meta": { "title": "Hi-res: re-sample detail", "pf": { "optional": "hiresFix" } }
+  },
+  "38": {
+    "class_type": "VAEDecode",
+    "inputs": { "samples": ["37", 0], "vae": ["2", 0] },
+    "_meta": { "title": "Hi-res: decode", "pf": { "optional": "hiresFix" } }
+  },
+  "39": {
+    "class_type": "ImageCompositeMasked",
+    "inputs": { "destination": ["35", 0], "source": ["38", 0], "x": 0, "y": 0, "resize_source": false },
+    "_meta": { "title": "Hi-res result (full-frame paste; bypasses to the base decode when hiresFix is off)", "pf": { "optional": "hiresFix", "bypass": { "0": "destination" } } }
+  },
   "40": {
     "class_type": "UltralyticsDetectorProvider",
     "inputs": { "model_name": "{{FACE_DETECTOR}}" },
@@ -184,7 +235,7 @@
   "41": {
     "class_type": "FaceDetailer",
     "inputs": {
-      "image": ["32", 0],
+      "image": ["39", 0],
       "model": ["1", 0],
       "clip": ["1", 1],
       "vae": ["2", 0],

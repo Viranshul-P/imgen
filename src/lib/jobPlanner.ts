@@ -85,7 +85,14 @@ const FEATURE_FROM_OPTION: Record<string, keyof JobOptions> = {
   faceDetailer: "enableFaceDetailer",
   handDetailer: "enableHandDetailer",
   upscale: "enableUpscale",
+  hiresFix: "enableHiresFix",
 };
+
+/** Hi-res second pass target: 1.5x the base render, snapped to a multiple of 16. */
+export const HIRES_SCALE = 1.5;
+function hiresSize(size: { width: number; height: number }): { width: number; height: number } {
+  return { width: Math.round((size.width * HIRES_SCALE) / 16) * 16, height: Math.round((size.height * HIRES_SCALE) / 16) * 16 };
+}
 
 function setIf(t: WorkflowTemplate, values: JobParams["values"], key: string, value: string | number | boolean | undefined): void {
   if (value !== undefined && key in t.meta.placeholders) values[key] = value;
@@ -175,6 +182,9 @@ export async function planShoot(req: ShootRequest, character: PlannerCharacter |
   setIf(template, values, "NEGATIVE_PROMPT", built.negative);
   setIf(template, values, "WIDTH", size.width);
   setIf(template, values, "HEIGHT", size.height);
+  const hires = hiresSize(size);
+  setIf(template, values, "HIRES_WIDTH", hires.width);
+  setIf(template, values, "HIRES_HEIGHT", hires.height);
   setIf(template, values, "OUTPUT_WIDTH", social.width);
   setIf(template, values, "OUTPUT_HEIGHT", social.height);
   setIf(template, values, "STEPS", req.steps);

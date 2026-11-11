@@ -244,6 +244,17 @@
   - the SDXL render (36.2 s) follows the prompt
   - tsc / lint / build clean
 
+## Post-spec addition — hi-res second pass + history race fix (2026-11-11)
+- The user reported SDXL output looked low-res and "AI-ish". New `hiresFix` feature on Engines A and B (default on, `enableHiresFix`):
+  - pipeline: 4x-UltraSharp → scale to 1.5x (`HIRES_WIDTH/HEIGHT`, set by the planner) → VAEEncode → low-denoise re-sample (Flux 12 steps / SDXL 20 steps @ 0.35) → decode → FaceDetailer
+  - when the feature is off, an `ImageCompositeMasked` node bypasses cleanly back to the base decode
+  - toggles in the Prompt and Shoot tabs; the Prompt tab now steers users to Flux for posts
+- `comfyClient.run` now retries `/history` for up to 10 s when completion arrives before the outputs are recorded. This was observed on a long Flux hi-res run under RAM pressure, where it made a successful render look like "finished without saving an image".
+- Verified:
+  - static 15/15 (all-features-on includes hiresFix), smoke 5/5
+  - full-size Flux hi-res render of the user's bedroom prompt: 1344×1728, 350 s, peak 6.6 GB. It reads as a real phone photo; compare the earlier SDXL 832×1216 output.
+- The Prompt tab's SDXL CFG slider is limited to the template's 4.5–5.5 range.
+
 ---
 ## ▶ STATUS: all phases (0–7) complete — 2026-11-11
 **Build is done; every spec check is verified.** What remains is using the studio:

@@ -316,6 +316,13 @@ export function ShootGenerator() {
               disabled={engine !== "A" || !character?.sdxlLora}
               hint="After the Flux render, flush VRAM and re-detail the face with the SDXL Character LoRA (denoise 0.35)"
             />
+            <Checkbox
+              checked={options.enableHiresFix}
+              onChange={(v) => setOpt("enableHiresFix", v)}
+              label="High resolution pass (1.5x re-sample)"
+              disabled={engine === "C"}
+              hint="Enlarges 1.5x and lets the model redraw real skin/eye/hair detail before the face pass"
+            />
             <Checkbox checked={options.enableUpscale} onChange={(v) => setOpt("enableUpscale", v)} label="Upscale then downscale to 1080 wide" disabled={engine === "C"} />
             <Checkbox checked={options.enablePhoneFinisher} onChange={(v) => setOpt("enablePhoneFinisher", v)} label="Phone Look Finisher" />
             <Select value={options.finisherPreset} onChange={(e) => setOpt("finisherPreset", e.target.value as JobOptions["finisherPreset"])} disabled={!options.enablePhoneFinisher}>

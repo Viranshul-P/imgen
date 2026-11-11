@@ -154,6 +154,9 @@ function smokeValues(t: WorkflowTemplate, base: Record<string, string>): Record<
   set("HEIGHT", 256);
   set("STEPS", 2);
   set("DETAILER_STEPS", 2);
+  set("HIRES_WIDTH", 384);
+  set("HIRES_HEIGHT", 384);
+  set("HIRES_STEPS", 2);
   set("CROP_TARGET_WIDTH", 256);
   set("CROP_TARGET_HEIGHT", 256);
   set("OUTPUT_WIDTH", 216);

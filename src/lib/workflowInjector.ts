@@ -140,14 +140,16 @@ export function parseTemplate(raw: unknown, sourceName: string): WorkflowTemplat
   return { meta: { ...meta, features: meta.features ?? {}, loraAnchors: meta.loraAnchors ?? [] }, nodes };
 }
 
-export async function loadTemplate(name: string, dir: string = defaultWorkflowDir()): Promise<WorkflowTemplate> {
-  const file = path.join(dir, name.endsWith(".json") ? name : `${name}_api.json`);
+export async function loadTemplate(name: string, dir?: string): Promise<WorkflowTemplate> {
+  const fileName = path.basename(name.endsWith(".json") ? name : `${name}_api.json`);
+  // Statically scoped default path keeps Next.js file tracing limited to workflows/.
+  const file = dir ? path.join(dir, fileName) : path.join(process.cwd(), "workflows", fileName);
   const raw: unknown = JSON.parse(await readFile(file, "utf-8"));
-  return parseTemplate(raw, path.basename(file));
+  return parseTemplate(raw, fileName);
 }
 
-export async function listTemplates(dir: string = defaultWorkflowDir()): Promise<string[]> {
-  const files = await readdir(dir);
+export async function listTemplates(dir?: string): Promise<string[]> {
+  const files = dir ? await readdir(dir) : await readdir(path.join(process.cwd(), "workflows"));
   return files.filter((f) => f.endsWith("_api.json")).map((f) => f.replace(/_api\.json$/, "")).sort();
 }
 

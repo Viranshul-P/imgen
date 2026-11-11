@@ -6,13 +6,14 @@ export const DATA_SUBDIRS = ["raw", "finished", "uploads", "masks", "datasets", 
 export type DataSubdir = (typeof DATA_SUBDIRS)[number];
 
 export function dataRoot(): string {
-  return path.resolve(process.cwd(), process.env["DATA_DIR"] ?? "./data");
+  // Runtime user-data location: excluded from Next.js build tracing on purpose.
+  return path.resolve(/* turbopackIgnore: true */ process.cwd(), process.env["DATA_DIR"] ?? "./data");
 }
 
 /** Resolve a DATA_DIR-relative path, refusing anything that escapes the data directory. */
 export function resolveDataPath(relative: string): string {
   const root = dataRoot();
-  const full = path.resolve(root, relative.replace(/^[/\\]+/, ""));
+  const full = path.resolve(/* turbopackIgnore: true */ root, relative.replace(/^[/\\]+/, ""));
   if (full !== root && !full.startsWith(root + path.sep)) throw new Error(`path escapes DATA_DIR: ${relative}`);
   return full;
 }
@@ -23,7 +24,7 @@ export function toDataRelative(full: string): string {
 }
 
 export async function ensureDataDirs(): Promise<void> {
-  await Promise.all(DATA_SUBDIRS.map((d) => mkdir(path.join(dataRoot(), d), { recursive: true })));
+  await Promise.all(DATA_SUBDIRS.map((d) => mkdir(path.join(/* turbopackIgnore: true */ dataRoot(), d), { recursive: true })));
 }
 
 export function safeFileStem(input: string): string {

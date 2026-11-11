@@ -55,7 +55,9 @@ $ComfyRoot = $cfg['COMFY_ROOT']
 $Python = $cfg['COMFY_PYTHON']
 $HostAddr = if ($cfg['COMFY_HOST']) { $cfg['COMFY_HOST'] } else { '127.0.0.1' }
 $Port = if ($cfg['COMFY_PORT']) { $cfg['COMFY_PORT'] } else { '8188' }
-$Flags = if ($cfg['COMFY_FLAGS']) { $cfg['COMFY_FLAGS'] } else { '--normalvram --reserve-vram 0.8 --disable-auto-launch' }
+# ComfyUI >= 0.4 dropped --normalvram: normal VRAM mode is the default when no mode flag is passed.
+$Flags = if ($cfg['COMFY_FLAGS']) { $cfg['COMFY_FLAGS'] } else { '--reserve-vram 0.8 --disable-auto-launch' }
+$Flags = ($Flags -replace '--normalvram', '').Trim()
 $BaseUrl = "http://${HostAddr}:$Port"
 
 function Get-SystemStats {
@@ -113,6 +115,7 @@ $out = Join-Path $LogDir 'comfy.out.log'
 $err = Join-Path $LogDir 'comfy.err.log'
 $proc = Start-Process -FilePath $Python -ArgumentList $argList -WorkingDirectory $ComfyRoot `
   -RedirectStandardOutput $out -RedirectStandardError $err -WindowStyle Hidden -PassThru
+$null = $proc.Handle  # cache the handle so ExitCode is readable after exit
 Set-Content -Path $PidFile -Value $proc.Id
 Write-Host "Started PID $($proc.Id); logs in $LogDir. Waiting for $BaseUrl/system_stats ..."
 

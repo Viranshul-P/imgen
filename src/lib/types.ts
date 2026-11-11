@@ -36,6 +36,16 @@ export const FINISHER_PRESETS = [
 ] as const;
 export type FinisherPreset = (typeof FINISHER_PRESETS)[number];
 
+/** Phone Look Finisher stages that take a 0..1 weight (stage 5 crop/JPEG and stage 6 presets are fixed). */
+export const FINISHER_STAGES = ["tone", "lens", "sharpen", "noise"] as const;
+export type FinisherStage = (typeof FINISHER_STAGES)[number];
+export type FinisherWeights = Record<FinisherStage, number>;
+export const DEFAULT_FINISHER_WEIGHTS: FinisherWeights = { tone: 1, lens: 1, sharpen: 1, noise: 1 };
+
+/** auto = whichever of 4:5 (1080x1350) / 9:16 (1080x1920) is closer to the render. */
+export const FINISHER_SIZES = ["auto", "4:5", "9:16"] as const;
+export type FinisherSize = (typeof FINISHER_SIZES)[number];
+
 /** Job-level options object from spec section 2.4 (plus the phone-look finisher toggle). */
 export interface JobOptions {
   enableFaceDetailer: boolean;

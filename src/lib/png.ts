@@ -33,6 +33,14 @@ function chunk(type: string, data: Uint8Array): Uint8Array {
 
 export type PixelFn = (x: number, y: number) => [number, number, number];
 
+/** Width/height from a PNG's IHDR chunk, or null if the bytes are not a PNG. */
+export function readPngSize(bytes: Uint8Array): { width: number; height: number } | null {
+  const sig = [137, 80, 78, 71, 13, 10, 26, 10];
+  if (bytes.length < 24 || sig.some((b, i) => bytes[i] !== b)) return null;
+  const view = new DataView(bytes.buffer, bytes.byteOffset, bytes.byteLength);
+  return { width: view.getUint32(16), height: view.getUint32(20) };
+}
+
 /** Encode an RGB image whose pixels come from `pixel(x, y)` (0-255 channels). */
 export function encodePngRgb(width: number, height: number, pixel: PixelFn): Uint8Array {
   const stride = width * 3 + 1;

@@ -131,17 +131,55 @@
 - Phone Look Finisher toggle and Vault/dataset export buttons are wired in Phases 5–6.
 - `npm audit` reports advisories only in dev tooling (Prisma CLI config loader, ESLint's typescript-estree minimatch). Not shipped at runtime; `--force` would change Prisma's major version.
 
+## Phase 5 — Smartphone ISP Visual Finisher ✅ COMPLETE (2026-11-11)
+**Completed**
+- `scripts/realism_finish.py` (Pillow + numpy + OpenCV, from ComfyUI's embedded Python), with all 6 stages:
+  1. tone: luminance-preserving WB, S-curve, lifted blacks, highlight shoulder, bloom
+  2. lens: 0.5px softening, 6–10% vignette, 0.5px radial CA
+  3. sharpen: luma unsharp mask r1.1 / 0.35 / thr 2
+  4. noise: shadow-weighted luma grain 1.8–3.0% + 0.4% low-frequency chroma
+  5. crop to 1080×1350 / 1080×1920 + JPEG q92 4:2:0 (JFIF only, no EXIF spoofing)
+  6. presets: all six from the spec
+- Master intensity 0–1 × per-stage weights (`--weights tone=,lens=,sharpen=,noise=`); `--size auto|4:5|9:16|original`, `--bundle zip`, `--list-presets`. The noise seed is deterministic (from the image bytes).
+- `src/lib/finisher.ts`: spawns `COMFY_PYTHON -I`, validates settings, and creates or refreshes `finished` Assets (`sourceId` = raw)
+- Worker hook: when `options.enablePhoneFinisher` is set → `data/finished/*.jpg`, written right after the raw is saved. It never fails the job. Dataset frames are skipped; Flux renders that will be face-locked are skipped, and the locked result is finished instead.
+- `POST /api/vault/export` (finish + zip in `data/exports/` with `finish_settings.json`)
+- Vault: Phone Look panel (preset, size, master intensity, per-stage sliders), "Apply <preset>" on the inspected image, "Finish & export N as zip" + download link, a version picker when several presets exist, cache-busted slider URLs
+- Shoot tab: Phone Look intensity slider
+- `docs/REALISM_GUIDE.md`
+
+**Verified checks**
+- All 6 presets on the real Engine B render: ~0.6 s per image at 1080×1350
+  - measured shadow grain 1.77% (daylight) → 2.99% (dim bedroom); highlights ~⅓ of that
+  - corner luma 0.86–0.96 of raw
+  - JPEG sampling 4:2:0, no EXIF; raw_unfiltered = crop/encode only
+- Live API: export with zip → 200, zip holds JPEG + settings, `/api/files/exports/*.zip` serves `application/zip`
+  - second preset export without bundle → 200; the raw asset now lists 2 derived finished versions, newest first
+  - bad id / intensity 3 / unknown stage → 400 with a clear message
+- `tsc --noEmit` 0 errors · `npm run lint` 0 errors / 0 warnings
+
+**Deviations / notes**
+- Order: the stage-5 crop/resize runs *before* stages 1–4 (JPEG stays last), so the pixel radii and grain size are exact at the delivered 1080-wide resolution. Upscaling after the grain would smear it.
+- **The embedded Python must run with `-I`.** Without it, an older numpy 2.1.1 / Pillow 12.3 in the Windows user site-packages shadows the embedded numpy 2.5.4 / Pillow 13.0.
+- The worker hook is exercised on full-size renders in Phase 7 (ComfyUI was not running during Phase 5).
+
 ---
-## ▶ RESUME HERE (paused 2026-11-11 after Phase 4)
-**Next:** Phase 5 → 6 → 7 (spec sections 7 and 8). Nothing for Phase 5 has been written yet.
-1. **Phase 5:** `scripts/realism_finish.py`, the 6-stage smartphone ISP finisher (Pillow + numpy + opencv from ComfyUI's embedded Python).
-   - Stages: tone curve + WB + highlight bloom → 0.5px softening + 6–10% vignette + 0.5px radial CA → unsharp mask (r 1.1, amt 0.35, thr 2) → shadow-weighted luma noise 1.8–3.0% + 0.4% low-freq chroma → crop to 1080×1350 / 1080×1920 → JPEG q92 4:2:0.
-   - Presets: `iphone_indoor_warm`, `iphone_mirror_selfie`, `iphone_flash_night`, `iphone_dim_bedroom_high_iso`, `iphone_daylight`, `raw_unfiltered`. Master intensity 0–1 plus per-stage weights.
-   - Then: a `src/lib/finisher.ts` spawn helper, a worker hook (when `options.enablePhoneFinisher` is set → `data/finished/*.jpg` Asset with `sourceId` = raw), `POST /api/vault/export` (finish + zip bundle), and a Vault export button. `docs/REALISM_GUIDE.md`.
-2. **Phase 6:** `docs/TRAINING.md` (Recipe A SDXL LoRA on 8 GB via OneTrainer/kohya, Recipe B Flux LoRA NF4/FluxGym split mode, JSON config presets) and `scripts/prepare_dataset.py` (`<repeats>_<trigger> woman/` + `.txt` captions from approved dataset frames). Add a dataset export action to `/api/datasets` and a button in DatasetCurator.
-3. **Phase 7:** `npm run build` + `npm run lint`, `npm run validate:workflows`, one full-size render each on Engine A, B and C through the worker (log speed + peak VRAM in `docs/BENCHMARKS.md`, confirm the /free flush between A and B), and the finisher on the outputs with `iphone_indoor_warm` + `iphone_dim_bedroom_high_iso`; check the before/after slider in the Vault. Also run `genesis_dataset` end to end with a real master_face. **Close Chrome and other heavy apps before Engine A** (Flux needs ~10 GB free RAM).
+## ▶ RESUME HERE (paused 2026-11-11 after Phase 5)
+**Next:** Phase 6 → 7 (spec section 8).
+1. **Phase 6:** `docs/TRAINING.md`:
+   - Recipe A: SDXL LoRA on 8 GB via OneTrainer/kohya (Adafactor/Prodigy, grad checkpointing, bf16, cached latents + TE outputs, dim/alpha 16, 1024, bs 1, 1400 steps)
+   - Recipe B: Flux LoRA (OneTrainer NF4 offload / FluxGym split mode, rank 8/16, adafactor, 512/768 buckets) + how the Cross-Engine SDXL Face Lock covers Flux before a Flux LoRA exists
+   - JSON config presets in `training/`
+   - `scripts/prepare_dataset.py` (`<repeats>_<trigger> woman/` + `.txt` captions from approved dataset frames)
+   - a dataset export action in `/api/datasets` and a button in DatasetCurator
+2. **Phase 7:**
+   - `npm run build` + `npm run lint` + `npm run validate:workflows`
+   - one full-size render each on Engine A, B and C through the worker, with the Phone Look Finisher on (log speed + peak VRAM in `docs/BENCHMARKS.md`, confirm the /free flush between A and B)
+   - finish the outputs with `iphone_indoor_warm` + `iphone_dim_bedroom_high_iso` and check the before/after slider in the Vault in a browser
+   - `genesis_dataset` end to end with a real master_face
+   - **Close Chrome and other heavy apps before Engine A** (Flux needs ~10 GB free RAM).
 
 **How to start everything again**
 - ComfyUI: `powershell -ExecutionPolicy Bypass -File scripts\start_comfy_api.ps1 -Background` (check with `-Status`)
 - Studio + worker: `npm run dev` → http://localhost:3000
-- Test data in the DB: character "Test Vira" (`pf_test_vira`) and one Engine B render in `data/raw/`.
+- Test data in the DB: character "Test Vira" (`pf_test_vira`), one Engine B render in `data/raw/`, plus 2 finished versions of it.

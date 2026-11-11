@@ -228,21 +228,19 @@
 - IP-Adapter FaceID pulls faces toward frontal, so "profile" frames often come out near-frontal, and it can exaggerate freckles or redness. TRAINING.md now tells you to fix angle words in captions or reject such frames before export.
 - The first 7 dataset frames share one lighting setup by design (lighting rotates every 7 frames). A full 35-frame run covers all 5.
 
-**Pending**
-- Before/after slider in the Vault: the Claude-in-Chrome extension was not connected, so this needs a manual check in the browser (the data side is verified: raw assets list their finished versions, files are served).
+- **Vault before/after slider:** checked manually in the browser by the user on 2026-11-11 ✅ (the Claude-in-Chrome extension wasn't connected, so it was confirmed by hand)
 
 ---
 ## ▶ STATUS: all phases (0–7) complete — 2026-11-11
-**Build is done.** What remains is using the studio (and one manual check):
-1. Manual: open http://localhost:3000 → Vault → click a render with the "phone" badge → drag the Raw/Phone Look slider.
-2. `git push` the local commits (the user pushes).
-3. Real character workflow:
+**Build is done; every spec check is verified.** What remains is using the studio:
+1. `git push` the local commits (the user pushes).
+2. Real character workflow:
    - create the character
    - Character tab → generate master-face candidates → pick one
    - generate the 35-frame dataset → approve and fix captions → Export
    - train Recipe A in OneTrainer/kohya (`docs/TRAINING.md`)
    - set the LoRA on the character → shoot
-4. Known gaps carried from Phase 4: no SAM auto clothing segmentation (needs a clothing-seg model not in the spec's model set). Masks are painted by hand.
+3. Known gaps carried from Phase 4: no SAM auto clothing segmentation (needs a clothing-seg model not in the spec's model set). Masks are painted by hand.
 
 **How to start everything again**
 - ComfyUI: `powershell -ExecutionPolicy Bypass -File scripts\start_comfy_api.ps1 -Background` (check with `-Status`, stop with `-Stop`)

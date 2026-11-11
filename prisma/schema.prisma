@@ -1,0 +1,149 @@
+// PersonaForge - local SQLite schema (Prisma 6).
+// SQLite has no native enums: status/engine/kind columns are validated strings (see src/lib/types.ts).
+// JSON payloads are stored as TEXT and parsed through typed helpers in src/lib/types.ts.
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "sqlite"
+  url      = env("DATABASE_URL")
+}
+
+/// A single fictional AI character and its locked identity settings.
+model Character {
+  id             String     @id @default(cuid())
+  name           String
+  triggerToken   String     @unique
+  /// Locked physical descriptors (eye colour, hair texture, beauty marks, proportions).
+  descriptors    String     @default("")
+  negativePrompt String     @default("")
+  /// Path (inside data/) of the chosen master_face.png.
+  masterFacePath String?
+  /// Default SDXL checkpoint for this character.
+  sdxlCheckpoint String?
+  /// Trained SDXL Character LoRA filename (models/loras) used by Engine B/C and the face lock.
+  sdxlLora       String?
+  sdxlLoraWeight Float      @default(0.85)
+  /// Optional trained Flux Character LoRA filename.
+  fluxLora       String?
+  fluxLoraWeight Float      @default(0.85)
+  /// Extra default LoRAs: [{ name, strengthModel, strengthClip?, engine }]
+  defaultLoras   String     @default("[]")
+  createdAt      DateTime   @default(now())
+  updatedAt      DateTime   @updatedAt
+  campaigns      Campaign[]
+  jobs           Job[]
+  assets         Asset[]
+}
+
+/// A shoot / content campaign grouping jobs, arcs and assets.
+model Campaign {
+  id          String    @id @default(cuid())
+  name        String
+  description String    @default("")
+  characterId String
+  character   Character @relation(fields: [characterId], references: [id], onDelete: Cascade)
+  createdAt   DateTime  @default(now())
+  jobs        Job[]
+  assets      Asset[]
+  arcs        Arc[]
+}
+
+/// One ComfyUI execution (always batch_size = 1). Multi-candidate shoots create N jobs.
+model Job {
+  id           String     @id @default(cuid())
+  /// queued | running | done | failed | cancelled
+  status       String     @default("queued")
+  /// Workflow template name, e.g. engine_a_flux_lifestyle
+  template     String
+  /// FLUX_GGUF | SDXL (drives the VRAM flush guard)
+  engineKind   String
+  /// Model that must be resident (unet or checkpoint name) - switching it triggers POST /free.
+  modelKey     String     @default("")
+  /// Serialized JobParams (values, features, variants, loras, inputs, options).
+  params       String
+  label        String     @default("")
+  priority     Int        @default(0)
+  progress     Float      @default(0)
+  progressText String     @default("")
+  error        String?
+  promptId     String?
+  stage        Int?
+  arcId        String?
+  arc          Arc?       @relation(fields: [arcId], references: [id], onDelete: SetNull)
+  parentJobId  String?
+  parentJob    Job?       @relation("FollowUps", fields: [parentJobId], references: [id], onDelete: SetNull)
+  followUps    Job[]      @relation("FollowUps")
+  characterId  String?
+  character    Character? @relation(fields: [characterId], references: [id], onDelete: SetNull)
+  campaignId   String?
+  campaign     Campaign?  @relation(fields: [campaignId], references: [id], onDelete: SetNull)
+  createdAt    DateTime   @default(now())
+  startedAt    DateTime?
+  finishedAt   DateTime?
+  durationMs   Int?
+  peakVramMb   Int?
+  assets       Asset[]
+
+  @@index([status, priority, createdAt])
+}
+
+/// A saved image: raw ComfyUI output, phone-finished JPEG, or a dataset frame.
+model Asset {
+  id          String     @id @default(cuid())
+  /// raw | finished | dataset | upload | mask
+  kind        String
+  /// Path relative to DATA_DIR, forward slashes.
+  path        String
+  width       Int?
+  height      Int?
+  /// Raw asset this one was derived from (finished JPEGs, face-lock results).
+  sourceId    String?
+  source      Asset?     @relation("Derived", fields: [sourceId], references: [id], onDelete: SetNull)
+  derived     Asset[]    @relation("Derived")
+  jobId       String?
+  job         Job?       @relation(fields: [jobId], references: [id], onDelete: SetNull)
+  characterId String?
+  character   Character? @relation(fields: [characterId], references: [id], onDelete: SetNull)
+  campaignId  String?
+  campaign    Campaign?  @relation(fields: [campaignId], references: [id], onDelete: SetNull)
+  stage       Int?
+  /// Dataset curation: null = undecided, true = approved, false = rejected.
+  approved    Boolean?
+  caption     String     @default("")
+  /// Quality checklist flags, e.g. { "hands": true, "ai_sheen": false }
+  flags       String     @default("{}")
+  createdAt   DateTime   @default(now())
+
+  @@index([kind, characterId])
+  @@index([campaignId, stage])
+}
+
+/// A 5-10 stage progression set in the same room and lighting.
+model Arc {
+  id          String   @id @default(cuid())
+  name        String
+  /// inpaint (Engine C on a base frame) | pose (Engine B with sequential pose references)
+  mode        String
+  campaignId  String
+  campaign    Campaign @relation(fields: [campaignId], references: [id], onDelete: Cascade)
+  baseAssetId String?
+  maskPath    String?
+  /// [{ stage, prompt, checkpoint?, loras?, poseImagePath?, denoise? }]
+  stages      String   @default("[]")
+  createdAt   DateTime @default(now())
+  jobs        Job[]
+}
+
+/// Singleton row the worker updates so the UI can show the active engine and liveness.
+model WorkerState {
+  id            Int      @id @default(1)
+  activeEngine  String   @default("")
+  activeModel   String   @default("")
+  currentJobId  String?
+  heartbeatAt   DateTime @default(now())
+  lastFlushAt   DateTime?
+  flushCount    Int      @default(0)
+}

@@ -20,7 +20,7 @@ export async function GET(request: NextRequest) {
       },
       orderBy: { createdAt: "desc" },
       take: Math.min(Number(q.get("limit") ?? 200) || 200, 1000),
-      include: { derived: { select: { id: true, path: true, kind: true } }, job: { select: { label: true, template: true } } },
+      include: { derived: { select: { id: true, path: true, kind: true, createdAt: true }, orderBy: { createdAt: "desc" } }, job: { select: { label: true, template: true } } },
     });
     return json(assets);
   } catch (err) {

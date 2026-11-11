@@ -323,6 +323,19 @@ export function ShootGenerator() {
                 <option key={p}>{p}</option>
               ))}
             </Select>
+            <div className="sm:col-span-2">
+              <Field label="Phone Look intensity">
+                <Slider
+                  value={options.finisherIntensity}
+                  min={0}
+                  max={1}
+                  step={0.05}
+                  onChange={(v) => setOpt("finisherIntensity", v)}
+                  label="phone look intensity"
+                  format={(v) => v.toFixed(2)}
+                />
+              </Field>
+            </div>
           </div>
 
           <Button size="lg" onClick={() => void submit()} disabled={submitting}>

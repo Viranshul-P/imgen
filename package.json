@@ -4,8 +4,15 @@
   "private": true,
   "description": "Local amateur-phone-realism studio driving headless ComfyUI on an 8 GB GPU",
   "scripts": {
-    "validate:workflows": "tsx scripts/validate_workflows.ts",
-    "typecheck": "tsc --noEmit"
+    "dev": "concurrently -k -n web,worker -c blue,magenta \"next dev\" \"tsx watch worker/queueWorker.ts\"",
+    "dev:web": "next dev",
+    "worker": "tsx worker/queueWorker.ts",
+    "build": "prisma generate && next build",
+    "start": "concurrently -k -n web,worker -c blue,magenta \"next start\" \"tsx worker/queueWorker.ts\"",
+    "lint": "eslint .",
+    "typecheck": "tsc --noEmit",
+    "db:push": "prisma db push",
+    "validate:workflows": "tsx scripts/validate_workflows.ts"
   },
   "engines": {
     "node": ">=22.4"

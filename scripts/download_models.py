@@ -267,7 +267,7 @@ def sha256_file(path: Path) -> str:
     return digest.hexdigest()
 
 
-def download(url: str, dest: Path, env: dict[str, str], expected_size: int | None, retries: int = 5) -> None:
+def download(url: str, dest: Path, env: dict[str, str], expected_size: int | None, retries: int = 12) -> None:
     dest.parent.mkdir(parents=True, exist_ok=True)
     part = dest.with_name(dest.name + ".part")
     for attempt in range(1, retries + 1):
@@ -306,7 +306,8 @@ def download(url: str, dest: Path, env: dict[str, str], expected_size: int | Non
             if expected_size is None or part.stat().st_size >= expected_size:
                 break
         except (urllib.error.URLError, TimeoutError, ConnectionError) as exc:
-            wait = min(5 * attempt, 30)
+            # Back off up to 2 minutes so a Wi-Fi/DNS outage of several minutes is ridden out.
+            wait = min(10 * attempt, 120)
             print(f"\n    attempt {attempt}/{retries} interrupted ({exc}); resuming in {wait}s")
             time.sleep(wait)
     else:

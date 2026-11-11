@@ -70,7 +70,7 @@
       "extend_down_factor": 1.0,
       "extend_left_factor": 1.0,
       "extend_right_factor": 1.0,
-      "context_from_mask_extend_factor": 1.2,
+      "context_from_mask_extend_factor": 1.6,
       "output_resize_to_target_size": true,
       "output_target_width": "{{CROP_TARGET_WIDTH}}",
       "output_target_height": "{{CROP_TARGET_HEIGHT}}",

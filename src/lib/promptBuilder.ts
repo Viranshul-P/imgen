@@ -21,6 +21,9 @@ export const SDXL_BASE_NEGATIVE =
   "studio lighting, professional photoshoot, airbrushed, plastic skin, beauty filter, 3d render, cgi, illustration, " +
   "oversaturated, hdr, watermark, text, logo, deformed hands, extra fingers, lowres, jpeg artifacts";
 
+/** Extra negatives for Engine C: the masked region must become clothing, never a new face or person. */
+export const WARDROBE_NEGATIVE = "face, head, eyes, portrait, extra person, second person, duplicate body, extra arms";
+
 export interface PromptCharacter {
   triggerToken: string;
   descriptors: string;
@@ -75,6 +78,12 @@ export function buildPrompt(req: PromptRequest): BuiltPrompt {
       .join(" ");
     // Flux runs at cfg 1 with FluxGuidance: negatives have no effect; keep them for the SDXL face-lock pass.
     negative = joinPhrases([SDXL_BASE_NEGATIVE, req.character?.negativePrompt, req.extraNegative]);
+  } else if (req.engine === "C") {
+    // Wardrobe inpaint: the sampler only sees a crop around the masked clothing. Identity descriptors
+    // (eyes, hair, freckles) or a selfie scene kit there make SDXL paint a second face/person into the
+    // garment area, so describe the clothing only and push faces away (Phase 7 finding).
+    positive = joinPhrases([req.userPrompt, "natural fabric folds and texture", "same soft indoor lighting as the rest of the photo"]);
+    negative = joinPhrases([SDXL_BASE_NEGATIVE, WARDROBE_NEGATIVE, req.character?.negativePrompt, req.extraNegative]);
   } else {
     positive = joinPhrases([identity, req.userPrompt, kit?.sdxl]);
     negative = joinPhrases([SDXL_BASE_NEGATIVE, kit?.negative, req.character?.negativePrompt, req.extraNegative]);

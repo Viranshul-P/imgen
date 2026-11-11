@@ -1,0 +1,121 @@
+{
+  "_pf": {
+    "name": "genesis_master_face_candidates",
+    "engine": "SDXL",
+    "description": "Genesis step 1 - front-facing amateur portrait candidates of a new fictional character. The worker queues N single-image jobs with different seeds; the user picks one as master_face.png.",
+    "placeholders": {
+      "SDXL_CHECKPOINT_NAME": { "type": "string", "default": "RealVisXL_V5.0_fp16.safetensors", "modelCategory": "checkpoints" },
+      "VAE_NAME": { "type": "string", "default": "sdxl_vae.safetensors", "modelCategory": "vae" },
+      "POSITIVE_PROMPT": { "type": "string", "default": "" },
+      "NEGATIVE_PROMPT": { "type": "string", "default": "" },
+      "SEED": { "type": "int", "default": 0 },
+      "STEPS": { "type": "int", "default": 28 },
+      "CFG": { "type": "float", "default": 5.0 },
+      "SAMPLER": { "type": "string", "default": "dpmpp_2m_sde" },
+      "SCHEDULER": { "type": "string", "default": "karras" },
+      "WIDTH": { "type": "int", "default": 1024 },
+      "HEIGHT": { "type": "int", "default": 1024 },
+      "DETAILER_STEPS": { "type": "int", "default": 20 },
+      "FACE_DENOISE": { "type": "float", "default": 0.3 },
+      "FACE_DETECTOR": { "type": "string", "default": "bbox/face_yolov8m.pt", "modelCategory": "ultralytics" },
+      "FILENAME_PREFIX": { "type": "string", "default": "personaforge/genesis_face" }
+    },
+    "features": {
+      "faceDetailer": { "default": true, "description": "FaceDetailer pass for crisp eyes on the candidate portraits" }
+    },
+    "loraAnchors": [{ "node": "1", "mode": "model_clip" }]
+  },
+  "1": {
+    "class_type": "CheckpointLoaderSimple",
+    "inputs": { "ckpt_name": "{{SDXL_CHECKPOINT_NAME}}" },
+    "_meta": { "title": "SDXL checkpoint (LoRA anchor)" }
+  },
+  "2": {
+    "class_type": "VAELoader",
+    "inputs": { "vae_name": "{{VAE_NAME}}" },
+    "_meta": { "title": "SDXL fp16-fix VAE" }
+  },
+  "3": {
+    "class_type": "CLIPTextEncode",
+    "inputs": { "text": "{{POSITIVE_PROMPT}}", "clip": ["1", 1] },
+    "_meta": { "title": "Portrait prompt" }
+  },
+  "4": {
+    "class_type": "CLIPTextEncode",
+    "inputs": { "text": "{{NEGATIVE_PROMPT}}", "clip": ["1", 1] },
+    "_meta": { "title": "Negative" }
+  },
+  "5": {
+    "class_type": "EmptyLatentImage",
+    "inputs": { "width": "{{WIDTH}}", "height": "{{HEIGHT}}", "batch_size": 1 },
+    "_meta": { "title": "Square portrait latent" }
+  },
+  "6": {
+    "class_type": "KSampler",
+    "inputs": {
+      "model": ["1", 0],
+      "seed": "{{SEED}}",
+      "steps": "{{STEPS}}",
+      "cfg": "{{CFG}}",
+      "sampler_name": "{{SAMPLER}}",
+      "scheduler": "{{SCHEDULER}}",
+      "positive": ["3", 0],
+      "negative": ["4", 0],
+      "latent_image": ["5", 0],
+      "denoise": 1.0
+    },
+    "_meta": { "title": "KSampler" }
+  },
+  "7": {
+    "class_type": "VAEDecode",
+    "inputs": { "samples": ["6", 0], "vae": ["2", 0] },
+    "_meta": { "title": "Decode" }
+  },
+  "10": {
+    "class_type": "UltralyticsDetectorProvider",
+    "inputs": { "model_name": "{{FACE_DETECTOR}}" },
+    "_meta": { "title": "Face detector", "pf": { "optional": "faceDetailer" } }
+  },
+  "11": {
+    "class_type": "FaceDetailer",
+    "inputs": {
+      "image": ["7", 0],
+      "model": ["1", 0],
+      "clip": ["1", 1],
+      "vae": ["2", 0],
+      "guide_size": 512,
+      "guide_size_for": true,
+      "max_size": 1024,
+      "seed": "{{SEED}}",
+      "steps": "{{DETAILER_STEPS}}",
+      "cfg": "{{CFG}}",
+      "sampler_name": "{{SAMPLER}}",
+      "scheduler": "{{SCHEDULER}}",
+      "positive": ["3", 0],
+      "negative": ["4", 0],
+      "denoise": "{{FACE_DENOISE}}",
+      "feather": 5,
+      "noise_mask": true,
+      "force_inpaint": true,
+      "bbox_threshold": 0.5,
+      "bbox_dilation": 10,
+      "bbox_crop_factor": 3.0,
+      "sam_detection_hint": "center-1",
+      "sam_dilation": 0,
+      "sam_threshold": 0.93,
+      "sam_bbox_expansion": 0,
+      "sam_mask_hint_threshold": 0.7,
+      "sam_mask_hint_use_negative": "False",
+      "drop_size": 10,
+      "bbox_detector": ["10", 0],
+      "wildcard": "",
+      "cycle": 1
+    },
+    "_meta": { "title": "FaceDetailer", "pf": { "optional": "faceDetailer", "bypass": { "0": "image" } } }
+  },
+  "20": {
+    "class_type": "SaveImage",
+    "inputs": { "images": ["11", 0], "filename_prefix": "{{FILENAME_PREFIX}}" },
+    "_meta": { "title": "Save candidate" }
+  }
+}

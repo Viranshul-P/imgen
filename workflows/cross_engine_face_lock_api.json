@@ -1,0 +1,96 @@
+{
+  "_pf": {
+    "name": "cross_engine_face_lock",
+    "engine": "SDXL",
+    "description": "Cross-Engine Identity Refiner - after a VRAM flush, re-details the face of an Engine A (Flux) render with the SDXL checkpoint + local SDXL Character LoRA via FaceDetailer at denoise 0.35. Queued automatically when enableCrossEngineFaceLock is set.",
+    "placeholders": {
+      "INPUT_IMAGE": { "type": "string", "default": "", "modelCategory": "input_image" },
+      "SDXL_CHECKPOINT_NAME": { "type": "string", "default": "RealVisXL_V5.0_fp16.safetensors", "modelCategory": "checkpoints" },
+      "VAE_NAME": { "type": "string", "default": "sdxl_vae.safetensors", "modelCategory": "vae" },
+      "POSITIVE_PROMPT": { "type": "string", "default": "" },
+      "NEGATIVE_PROMPT": { "type": "string", "default": "" },
+      "SEED": { "type": "int", "default": 0 },
+      "DETAILER_STEPS": { "type": "int", "default": 24 },
+      "CFG": { "type": "float", "default": 5.0 },
+      "SAMPLER": { "type": "string", "default": "dpmpp_2m_sde" },
+      "SCHEDULER": { "type": "string", "default": "karras" },
+      "FACE_DENOISE": { "type": "float", "default": 0.35 },
+      "FACE_DETECTOR": { "type": "string", "default": "bbox/face_yolov8m.pt", "modelCategory": "ultralytics" },
+      "FILENAME_PREFIX": { "type": "string", "default": "personaforge/face_lock" }
+    },
+    "features": {},
+    "loraAnchors": [{ "node": "1", "mode": "model_clip" }]
+  },
+  "1": {
+    "class_type": "CheckpointLoaderSimple",
+    "inputs": { "ckpt_name": "{{SDXL_CHECKPOINT_NAME}}" },
+    "_meta": { "title": "SDXL checkpoint (Character LoRA anchor)" }
+  },
+  "2": {
+    "class_type": "VAELoader",
+    "inputs": { "vae_name": "{{VAE_NAME}}" },
+    "_meta": { "title": "SDXL fp16-fix VAE" }
+  },
+  "3": {
+    "class_type": "CLIPTextEncode",
+    "inputs": { "text": "{{POSITIVE_PROMPT}}", "clip": ["1", 1] },
+    "_meta": { "title": "Identity prompt (trigger token + descriptors)" }
+  },
+  "4": {
+    "class_type": "CLIPTextEncode",
+    "inputs": { "text": "{{NEGATIVE_PROMPT}}", "clip": ["1", 1] },
+    "_meta": { "title": "Negative" }
+  },
+  "5": {
+    "class_type": "LoadImage",
+    "inputs": { "image": "{{INPUT_IMAGE}}" },
+    "_meta": { "title": "Flux render to refine" }
+  },
+  "6": {
+    "class_type": "UltralyticsDetectorProvider",
+    "inputs": { "model_name": "{{FACE_DETECTOR}}" },
+    "_meta": { "title": "Face detector" }
+  },
+  "7": {
+    "class_type": "FaceDetailer",
+    "inputs": {
+      "image": ["5", 0],
+      "model": ["1", 0],
+      "clip": ["1", 1],
+      "vae": ["2", 0],
+      "guide_size": 512,
+      "guide_size_for": true,
+      "max_size": 1024,
+      "seed": "{{SEED}}",
+      "steps": "{{DETAILER_STEPS}}",
+      "cfg": "{{CFG}}",
+      "sampler_name": "{{SAMPLER}}",
+      "scheduler": "{{SCHEDULER}}",
+      "positive": ["3", 0],
+      "negative": ["4", 0],
+      "denoise": "{{FACE_DENOISE}}",
+      "feather": 6,
+      "noise_mask": true,
+      "force_inpaint": true,
+      "bbox_threshold": 0.5,
+      "bbox_dilation": 12,
+      "bbox_crop_factor": 3.0,
+      "sam_detection_hint": "center-1",
+      "sam_dilation": 0,
+      "sam_threshold": 0.93,
+      "sam_bbox_expansion": 0,
+      "sam_mask_hint_threshold": 0.7,
+      "sam_mask_hint_use_negative": "False",
+      "drop_size": 10,
+      "bbox_detector": ["6", 0],
+      "wildcard": "",
+      "cycle": 1
+    },
+    "_meta": { "title": "SDXL face lock (denoise 0.35)" }
+  },
+  "8": {
+    "class_type": "SaveImage",
+    "inputs": { "images": ["7", 0], "filename_prefix": "{{FILENAME_PREFIX}}" },
+    "_meta": { "title": "Save locked render" }
+  }
+}

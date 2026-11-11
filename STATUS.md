@@ -54,3 +54,33 @@
 **Notes**
 - Remaining `pip check` lines are cosmetic. They are web-UI template media packages (not shipped with the portable build) and insightface's distribution-name check for `albumentations` (the import is provided by albumentationsx).
 - On first start ReActor downloads face-restore weights (~1.25 GB) into the local `models\facerestore_models` because it ignores `extra_model_paths.yaml`. The first cold start takes a few minutes.
+
+## Phase 2 — Free Resumable Model Downloader ✅ COMPLETE (2026-11-11)
+**Completed**
+- `scripts/download_models.py` (stdlib only), with `--check-only`, `--download-core` and `--custom-manifest custom_models.json`.
+  - Inventories every folder ComfyUI searches: local `models/` plus each `extra_model_paths.yaml` base path, with the unet/diffusion_models and clip/text_encoders aliases. Files already present are skipped.
+  - Checks free disk space and prints the total download size before starting.
+  - Resumes interrupted downloads (`.part` files + HTTP Range), retries with backoff (12 attempts, up to 2 min apart), and verifies SHA-256 against the Hugging Face LFS object id.
+  - `custom_models.json` holds `{ name, url, target_dir }` entries (https only, plain filenames, whitelisted target dirs). Optional `HF_TOKEN` / `CIVITAI_TOKEN` are sent only to their own hosts.
+- Reused from shared folders (not downloaded): `flux1-dev-Q4_K_S.gguf`, `clip_l.safetensors`, `ae.safetensors`, `juggernautXL_v8Rundiffusion.safetensors`.
+- Downloaded and SHA-256 verified (14 files, 20.5 GiB):
+  - T5 Q5_K_M GGUF
+  - sdxl_vae (fp16-fix)
+  - RealVisXL V5.0 fp16
+  - ControlNet OpenPose (twins) and Depth SDXL
+  - IP-Adapter FaceID Plus v2 + its LoRA
+  - CLIP-ViT-H-14 (safetensors)
+  - face_yolov8m and hand_yolov8n
+  - XLabs Flux Realism LoRA
+  - Amateur Photography Flux LoRA
+  - 4x-UltraSharp and RealESRGAN_x2
+
+**Verified checks**
+- A second `--check-only` reports `Total to download: 0 B in 0 file(s)`.
+- A Wi-Fi/DNS outage mid-run (`getaddrinfo failed`) failed 3 files. Re-running resumed them from their `.part` files, and all 3 verified OK.
+
+**Deviations from spec (URLs verified via the HF API, rule 5)**
+- `black-forest-labs/FLUX.1-schnell/ae.safetensors` now returns 401 (gated). The ungated mirror `ffxvs/vae-flux` hosts the byte-identical file (same LFS sha256 `afc8e282…`) and is used as the fallback.
+- The xinsir OpenPose file is now `diffusion_pytorch_model_twins.safetensors` (underscore instead of the spec's dot).
+- CLIP-ViT-H: the repo publishes a real `open_clip_model.safetensors`. That file is used instead of renaming the `.bin` pickle to `.safetensors`, which would not load.
+- Amateur Photography LoRA: `ujouy/Amateur_Photography_FluxDev` → `amateurphoto-v6-forcu.safetensors`, saved as `flux_amateur_photography.safetensors`. The `isaiahbjork` mirror is kept as a fallback.

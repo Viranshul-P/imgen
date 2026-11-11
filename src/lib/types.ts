@@ -19,6 +19,10 @@ export const STUDIO_ENGINES = Object.keys(ENGINE_TEMPLATES) as StudioEngine[];
 export const ASSET_KINDS = ["raw", "finished", "dataset", "upload", "mask"] as const;
 export type AssetKind = (typeof ASSET_KINDS)[number];
 
+/** Quality checklist flags offered in the Content Vault. */
+export const QUALITY_FLAGS = ["hands_ok", "face_consistent", "no_ai_sheen", "background_lived_in", "ready_to_post"] as const;
+export type QualityFlag = (typeof QUALITY_FLAGS)[number];
+
 export const ARC_MODES = ["inpaint", "pose"] as const;
 export type ArcMode = (typeof ARC_MODES)[number];
 

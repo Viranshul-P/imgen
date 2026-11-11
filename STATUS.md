@@ -200,18 +200,52 @@
 - Recipe B needs the full FLUX.1-dev weights (gated, free licence, ~24 GB). They are not downloaded automatically.
 - No actual LoRA training run yet: it needs a real approved genesis dataset (Phase 7) and a trainer installed outside ComfyUI.
 
+## Phase 7 — End-to-End Verification ✅ COMPLETE (2026-11-11)
+**Verified checks**
+- `npm run build` ✅ (0 warnings) · `npm run lint` ✅ 0/0 · `tsc --noEmit` ✅ 0 errors
+- `npm run validate:workflows` against live ComfyUI: **15/15 static, 5/5 smoke** (genesis_dataset skipped by design: it was run for real below). Re-run after the Engine C fix: still 15/15 and 5/5.
+- Full-size renders through the queue worker, Phone Look Finisher on (details in `docs/BENCHMARKS.md`):
+  - **Engine B** 33.2 s
+  - **Engine C** 22.6 s
+  - **Engine A** 165.1 s (with Chrome open, ~5 GB RAM free)
+  - all under 8 GB, peak 6.7–7.8 GB device-wide
+- **VRAM flush:** the worker logged `SDXL -> FLUX_GGUF` before Engine A and `FLUX_GGUF -> SDXL` right after it (flushCount 2). Same-engine jobs reuse the resident model.
+- **Finisher:** the worker auto-finished every render (indoor_warm / mirror_selfie). `iphone_indoor_warm` and `iphone_dim_bedroom_high_iso` were also run over the A/B/C outputs via `/api/vault/export` (3 images each + zip, ~2.3 s).
+- **Engine C pixel lock at full size:** 0 of 633,286 pixels outside the mask (+ feather margin) changed.
+- **Genesis end to end:**
+  - 4 master-face candidates (1024², ~31 s each) → one set as master_face
+  - 6 IP-Adapter FaceID dataset frames (~43.5 s each after a 71.5 s first load): identity consistent across frames
+  - all approved → `/api/datasets` export → 6 images + correct captions + configs + zip
+
+**Fixed during Phase 7**
+- **Engine C painted a second face into the clothing area at denoise 0.9.** Causes:
+  - the prompt carried the character's identity descriptors into a torso-only crop
+  - the crop context (1.2×) hid the real head
+  - Fix: Engine C prompts now describe only the garment, plus a wardrobe negative (`face, head, eyes, portrait, extra person…`), and `context_from_mask_extend_factor` went 1.2 → 1.6. The re-test gave a clean black turtleneck on the same person, still with 0 changed outside pixels.
+  - Also observed: at the default 0.75 denoise the garment changes but keeps the original colour. For colour changes use 0.85–0.92 (the slider allows up to 0.92).
+
+**Observations (not bugs)**
+- IP-Adapter FaceID pulls faces toward frontal, so "profile" frames often come out near-frontal, and it can exaggerate freckles or redness. TRAINING.md now tells you to fix angle words in captions or reject such frames before export.
+- The first 7 dataset frames share one lighting setup by design (lighting rotates every 7 frames). A full 35-frame run covers all 5.
+
+**Pending**
+- Before/after slider in the Vault: the Claude-in-Chrome extension was not connected, so this needs a manual check in the browser (the data side is verified: raw assets list their finished versions, files are served).
+
 ---
-## ▶ RESUME HERE (paused 2026-11-11 after Phase 6)
-**Next:** Phase 7 (spec section 8.2) - end-to-end verification.
-1. `npm run build` + `npm run lint` (both passed at the end of Phase 6) + `npm run validate:workflows` (needs ComfyUI up)
-2. One full-size render each on Engine A, B and C through the worker with the Phone Look Finisher on:
-   - log speed + peak VRAM in `docs/BENCHMARKS.md`
-   - confirm the worker's /free flush between A and B (WorkerState.flushCount / worker log)
-3. Finish the outputs with `iphone_indoor_warm` + `iphone_dim_bedroom_high_iso`, and check the Vault before/after slider in a browser
-4. `genesis_dataset` end to end with a real master_face (genesis_master_face_candidates → pick one → dataset); approve frames, then run the Dataset Curator export
-5. **Close Chrome and other heavy apps before Engine A** (Flux needs ~10 GB free RAM). The dev server was stopped at the end of Phase 6.
+## ▶ STATUS: all phases (0–7) complete — 2026-11-11
+**Build is done.** What remains is using the studio (and one manual check):
+1. Manual: open http://localhost:3000 → Vault → click a render with the "phone" badge → drag the Raw/Phone Look slider.
+2. `git push` the local commits (the user pushes).
+3. Real character workflow:
+   - create the character
+   - Character tab → generate master-face candidates → pick one
+   - generate the 35-frame dataset → approve and fix captions → Export
+   - train Recipe A in OneTrainer/kohya (`docs/TRAINING.md`)
+   - set the LoRA on the character → shoot
+4. Known gaps carried from Phase 4: no SAM auto clothing segmentation (needs a clothing-seg model not in the spec's model set). Masks are painted by hand.
 
 **How to start everything again**
-- ComfyUI: `powershell -ExecutionPolicy Bypass -File scripts\start_comfy_api.ps1 -Background` (check with `-Status`)
+- ComfyUI: `powershell -ExecutionPolicy Bypass -File scripts\start_comfy_api.ps1 -Background` (check with `-Status`, stop with `-Stop`)
 - Studio + worker: `npm run dev` → http://localhost:3000. Stop the dev server before `npm run build`: it locks Prisma's engine DLL.
-- Test data in the DB: character "Test Vira" (`pf_test_vira`), one Engine B render in `data/raw/`, plus 3 finished versions of it.
+- Close heavy apps before Flux (Engine A) runs. ~10 GB free RAM gives the fastest loads.
+- Test data in the DB: character "Test Vira" (`pf_test_vira`) with a master face, 6 approved dataset frames, Phase 7 renders + finished versions.

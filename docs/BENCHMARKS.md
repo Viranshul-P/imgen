@@ -17,10 +17,19 @@
 ## Engine timings
 Smoke runs (Phase 3, 256×256, 2 steps): face lock 4.2 s · Engine A 25.8 s (incl. Flux + T5 load) · Engine B 6.8 s · Engine C 3.8 s · genesis faces 0.8 s.
 
-Full-size runs:
+Full-size runs (Phase 7, 2026-11-11, through the queue worker, Phone Look Finisher on):
 
-| Engine | Resolution | Steps | Time | Peak VRAM | Notes |
+| Job | Resolution | Steps | Time | Peak VRAM* | Notes |
 |---|---|---|---|---|---|
-| A — Flux GGUF Q4_K_S | 896×1152 | 24 | | | |
-| B — SDXL RealVisXL V5 + FaceDetailer (via worker) | 832×1216 | 28 + 20 | 33.1 s | 7,041 MB | first run incl. model load, 2026-11-11 |
-| C — SDXL inpaint | crop | 28 | | | |
+| B — SDXL RealVisXL V5 + FaceDetailer | 832×1216 | 28 + 20 | **33.2 s** | 7,598 MB | first job after ComfyUI start (incl. checkpoint load) |
+| C — SDXL wardrobe inpaint (crop → stitch) | 832×1216 (1024² crop) | 28 | **22.6 s** / 21.7 s / 23.1 s | 7,557–7,699 MB | denoise 0.75 / 0.9 / 0.9 after the prompt fix; pixel lock 0 of 633,286 outside px changed |
+| A — Flux GGUF Q4_K_S + T5 Q5_K_M + realism LoRAs + FaceDetailer | 896×1152 | 24 + 20 | **165.1 s** | 6,726 MB | incl. SDXL→Flux flush + Flux/T5 load with only ~5 GB RAM free (Chrome open) |
+| Genesis master-face candidate | 1024×1024 | 28 | 36.1 s first, then ~31 s | 6,527–7,692 MB | first one incl. Flux→SDXL flush + reload |
+| Genesis dataset frame (IP-Adapter FaceID Plus v2) | 832×1216 | 28 + 20 | 71.5 s first, then ~43.5 s | 7,437–7,773 MB | first one incl. insightface + IP-Adapter load |
+| Phone Look Finisher | → 1080×1350 JPEG | — | ~0.6 s/img in-process; 2.2–2.5 s for 3 imgs via `/api/vault/export` (incl. zip) | CPU | both `iphone_indoor_warm` and `iphone_dim_bedroom_high_iso` |
+
+\*Device-wide peak sampled every 2 s from `/system_stats` (total − free), so it includes the desktop's share (~0.1–1 GB). Every job stayed under the 8 GB card limit with `--reserve-vram 0.8`; no OOM, no fallback to `--lowvram`.
+
+**VRAM flush guard verified:** the worker logged `VRAM flush: SDXL:RealVisXL_V5.0_fp16 -> FLUX_GGUF:flux1-dev-Q4_K_S` before Engine A, and `FLUX_GGUF -> SDXL` straight after it (`WorkerState.flushCount` = 2). Same-engine jobs reused the loaded model without flushing (the 2nd–4th face candidates are ~5 s faster than the 1st).
+
+**Engine A RAM note:** with Chrome open (≈4–5 GB RAM free) the Flux job took 165 s end-to-end, partly page-file bound while loading. With ~10 GB free, expect noticeably faster loads. The sampling itself kept the GPU at ~97 %.

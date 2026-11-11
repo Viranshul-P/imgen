@@ -104,3 +104,29 @@
 
 **Notes**
 - ReActor is installed but deliberately not wired into any graph (`enableReactorSwap: true` is rejected). Identity comes from the Character LoRA and IP-Adapter FaceID.
+
+## Phase 4 — Next.js Studio & Background Queue Worker ✅ COMPLETE (2026-11-11)
+**Completed**
+- Stack: Next.js 16.4.6 (App Router, Turbopack), React 19.3, TypeScript 5.9 strict, Tailwind v4, shadcn/ui-style primitives (cva + tailwind-merge, written in-repo the way the shadcn CLI copies them), lucide-react, Prisma 6.19.3 + SQLite, `concurrently` (`npm run dev` = web + worker)
+- `prisma/schema.prisma`: Character, Campaign, Job (`queued|running|done|failed|cancelled`), Asset, Arc, WorkerState
+- `worker/queueWorker.ts`:
+  - claims jobs atomically (priority, then FIFO) and uploads inputs
+  - injects the workflow and validates it against the live schema before queueing
+  - **VRAM guard:** `POST /free` + 1.5 s pause on any engine or model switch
+  - live WebSocket progress written to the DB, peak-VRAM sampling, cancel → `/interrupt`
+  - saves outputs to `data/raw/`, auto-queues the cross-engine face lock, re-queues stuck jobs after a restart
+- API routes: `comfy/status|models|free`, `jobs` (+ cancel/retry), `jobs/stream` (SSE), `characters`, `campaigns` (+ arcs: "Generate Full Progression Arc"), `datasets`, `uploads`, `assets`, `files/[...path]` (traversal-safe)
+- Lib: `promptBuilder` (Flux prose / SDXL tags, studio-sheen detector), `sceneKits` (6 amateur phone kits), `modelDiscovery` (all dropdowns from `/object_info`), `jobPlanner` (N candidates → N batch_size=1 jobs, 35-frame dataset variations, face-lock follow-ups)
+- UI: SystemStatusHeader, ShootGenerator (+ LoraStack, AssetPicker), ArcProgressionBuilder, WardrobeMaskCanvas, CharacterDNAEditor, DatasetCurator, ContentVault (+ before/after slider, quality checklist), JobQueue
+
+**Verified checks**
+- `tsc --noEmit` (strict + noUncheckedIndexedAccess): 0 errors · `npm run lint`: 0 errors / 0 warnings · `npm run build`: success, 0 warnings
+- Live end-to-end via the running studio:
+  - character created → Engine B shot queued over the API → worker ran it → SSE streamed progress ("FaceDetailer 16/20" …) → `data/raw/<job>_0.png` saved and registered as an Asset
+  - **33.1 s, peak 7,041 MB VRAM** at 832×1216 + FaceDetailer
+- `/api/files` serves outputs (200) and rejects traversal (403). `enableReactorSwap: true` is rejected with 400.
+
+**Deferred / notes**
+- The optional SAM auto-segment helper (top/bottom/outfit/body) is not included: it needs a clothing-segmentation model that is not in the Phase 2 model set. Masks are painted manually.
+- Phone Look Finisher toggle and Vault/dataset export buttons are wired in Phases 5–6.
+- `npm audit` reports advisories only in dev tooling (Prisma CLI config loader, ESLint's typescript-estree minimatch). Not shipped at runtime; `--force` would change Prisma's major version.

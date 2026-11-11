@@ -15,10 +15,12 @@
 - GitHub release download: 1.96 GB in 278 s (avg 7.0 MB/s ≈ 56 Mbps)
 
 ## Engine timings
-_Filled in during Phase 7 verification._
+Smoke runs (Phase 3, 256×256, 2 steps): face lock 4.2 s · Engine A 25.8 s (incl. Flux + T5 load) · Engine B 6.8 s · Engine C 3.8 s · genesis faces 0.8 s.
+
+Full-size runs:
 
 | Engine | Resolution | Steps | Time | Peak VRAM | Notes |
 |---|---|---|---|---|---|
 | A — Flux GGUF Q4_K_S | 896×1152 | 24 | | | |
-| B — SDXL | 832×1216 | 28 | | | |
+| B — SDXL RealVisXL V5 + FaceDetailer (via worker) | 832×1216 | 28 + 20 | 33.1 s | 7,041 MB | first run incl. model load, 2026-11-11 |
 | C — SDXL inpaint | crop | 28 | | | |

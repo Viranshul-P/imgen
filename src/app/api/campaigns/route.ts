@@ -1,3 +1,4 @@
+import { randomInt } from "node:crypto";
 import type { NextRequest } from "next/server";
 import { errorResponse, json, readJson, requireString } from "@/lib/api";
 import { type PlannedJob, type ShootRequest, planShoot } from "@/lib/jobPlanner";
@@ -79,6 +80,8 @@ export async function POST(request: NextRequest) {
       },
     });
 
+    // One seed for the whole arc keeps every stage visually coherent.
+    const arcSeed = body.seed ?? randomInt(0, 2 ** 31);
     const planned: PlannedJob[] = [];
     for (const stage of [...body.stages].sort((a, b) => a.stage - b.stage)) {
       if (!stage.prompt?.trim()) throw new BadRequestError(`stage ${stage.stage} needs a prompt`);
@@ -88,7 +91,7 @@ export async function POST(request: NextRequest) {
         sceneKit: body.sceneKit,
         checkpoint: stage.checkpoint ?? body.checkpoint,
         loras: [...(body.loras ?? []), ...(stage.loras ?? [])],
-        seed: body.seed,
+        seed: arcSeed,
         aspect: body.aspect,
         options: body.options,
         stage: stage.stage,

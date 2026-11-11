@@ -130,3 +130,18 @@
 - The optional SAM auto-segment helper (top/bottom/outfit/body) is not included: it needs a clothing-segmentation model that is not in the Phase 2 model set. Masks are painted manually.
 - Phone Look Finisher toggle and Vault/dataset export buttons are wired in Phases 5–6.
 - `npm audit` reports advisories only in dev tooling (Prisma CLI config loader, ESLint's typescript-estree minimatch). Not shipped at runtime; `--force` would change Prisma's major version.
+
+---
+## ▶ RESUME HERE (paused 2026-11-11 after Phase 4)
+**Next:** Phase 5 → 6 → 7 (spec sections 7 and 8). Nothing for Phase 5 has been written yet.
+1. **Phase 5:** `scripts/realism_finish.py`, the 6-stage smartphone ISP finisher (Pillow + numpy + opencv from ComfyUI's embedded Python).
+   - Stages: tone curve + WB + highlight bloom → 0.5px softening + 6–10% vignette + 0.5px radial CA → unsharp mask (r 1.1, amt 0.35, thr 2) → shadow-weighted luma noise 1.8–3.0% + 0.4% low-freq chroma → crop to 1080×1350 / 1080×1920 → JPEG q92 4:2:0.
+   - Presets: `iphone_indoor_warm`, `iphone_mirror_selfie`, `iphone_flash_night`, `iphone_dim_bedroom_high_iso`, `iphone_daylight`, `raw_unfiltered`. Master intensity 0–1 plus per-stage weights.
+   - Then: a `src/lib/finisher.ts` spawn helper, a worker hook (when `options.enablePhoneFinisher` is set → `data/finished/*.jpg` Asset with `sourceId` = raw), `POST /api/vault/export` (finish + zip bundle), and a Vault export button. `docs/REALISM_GUIDE.md`.
+2. **Phase 6:** `docs/TRAINING.md` (Recipe A SDXL LoRA on 8 GB via OneTrainer/kohya, Recipe B Flux LoRA NF4/FluxGym split mode, JSON config presets) and `scripts/prepare_dataset.py` (`<repeats>_<trigger> woman/` + `.txt` captions from approved dataset frames). Add a dataset export action to `/api/datasets` and a button in DatasetCurator.
+3. **Phase 7:** `npm run build` + `npm run lint`, `npm run validate:workflows`, one full-size render each on Engine A, B and C through the worker (log speed + peak VRAM in `docs/BENCHMARKS.md`, confirm the /free flush between A and B), and the finisher on the outputs with `iphone_indoor_warm` + `iphone_dim_bedroom_high_iso`; check the before/after slider in the Vault. Also run `genesis_dataset` end to end with a real master_face. **Close Chrome and other heavy apps before Engine A** (Flux needs ~10 GB free RAM).
+
+**How to start everything again**
+- ComfyUI: `powershell -ExecutionPolicy Bypass -File scripts\start_comfy_api.ps1 -Background` (check with `-Status`)
+- Studio + worker: `npm run dev` → http://localhost:3000
+- Test data in the DB: character "Test Vira" (`pf_test_vira`) and one Engine B render in `data/raw/`.

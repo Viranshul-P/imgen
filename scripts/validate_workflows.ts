@@ -112,7 +112,8 @@ function resolveModelValues(t: WorkflowTemplate, info: ObjectInfo): { values: Re
     const options = optionsFor(info, use.classType, use.input);
     const preferred = String(def.default);
     let hint = MODEL_HINTS[key];
-    if (key === "VAE_NAME") hint = t.meta.engine === "FLUX_GGUF" ? /^ae\./i : /sdxl/i;
+    // Never fall back to the TAESD preview decoders (taesdxl) for real renders.
+    if (key === "VAE_NAME") hint = t.meta.engine === "FLUX_GGUF" ? /^ae\./i : /sdxl_vae|fp16-fix/i;
     const pick = options.includes(preferred) ? preferred : options.find((o) => hint?.test(o));
     if (pick) values[key] = pick;
     else missing.push(`${key} (default ${preferred}; ${use.classType}.${use.input} offers ${options.length ? options.join(", ") : "nothing"})`);

@@ -3,6 +3,7 @@
  * (batch_size 1); multi-candidate shoots become N jobs with consecutive seeds.
  */
 import { randomInt } from "node:crypto";
+import { assertMinorSafe } from "./contentSafety";
 import { buildPrompt } from "./promptBuilder";
 import { ASPECT_SIZES, SOCIAL_SIZES, getSceneKit } from "./sceneKits";
 import {
@@ -173,6 +174,7 @@ export async function planShoot(req: ShootRequest, character: PlannerCharacter |
     extraNegative: req.negativePrompt,
     raw,
   });
+  assertMinorSafe(built.positive);
   const aspect = req.aspect ?? kit?.aspect ?? "4:5";
   const size = ASPECT_SIZES[req.engine === "A" ? "A" : "B"][aspect];
   const social = SOCIAL_SIZES[aspect];
@@ -251,6 +253,7 @@ export async function planMasterFaceCandidates(
   ]
     .filter(Boolean)
     .join(", ");
+  assertMinorSafe(positive);
   const negative = buildPrompt({ engine: "B", userPrompt: "", character }).negative + ", profile view, sunglasses, hands on face, multiple people";
   const seed0 = baseSeed(options.seed);
   const jobs: PlannedJob[] = [];
@@ -302,6 +305,7 @@ export async function planDatasetFrames(character: PlannerCharacter, count: numb
   if (!Number.isInteger(count) || count < 1 || count > 60) throw new BadRequestError("dataset size must be 1..60");
   const template = await loadTemplate(ENGINE_TEMPLATES.GENESIS_DATASET);
   const seed0 = baseSeed(seed);
+  assertMinorSafe(character.descriptors);
   return datasetVariations(count).map((variation, i) => {
     const built = buildPrompt({
       engine: "B",
@@ -346,6 +350,7 @@ export async function planFaceLock(
   const template = await loadTemplate(ENGINE_TEMPLATES.FACE_LOCK);
   const parentParams = parseJson<JobParams | null>(parent.params, null);
   const built = buildPrompt({ engine: "B", userPrompt: "natural face, candid phone photo", character });
+  assertMinorSafe(built.positive);
   const values: JobParams["values"] = {};
   setIf(template, values, "POSITIVE_PROMPT", built.positive);
   setIf(template, values, "NEGATIVE_PROMPT", built.negative);

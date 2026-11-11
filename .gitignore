@@ -1,0 +1,51 @@
+# Dependencies
+node_modules/
+.pnp
+.pnp.js
+
+# Next.js / build output
+.next/
+out/
+build/
+dist/
+*.tsbuildinfo
+next-env.d.ts
+
+# Environment & secrets (HF / Civitai tokens live here)
+.env
+.env.local
+.env.*.local
+
+# Local database
+prisma/*.db
+prisma/*.db-journal
+*.sqlite
+
+# Generated images, datasets and exports
+data/
+
+# Model weights — never commit
+*.safetensors
+*.gguf
+*.ckpt
+*.pt
+*.pth
+*.bin
+*.onnx
+
+# Python
+__pycache__/
+*.pyc
+.venv/
+
+# ComfyUI install lives outside the repo, but guard against accidental copies
+ComfyUI_windows_portable/
+_downloads/
+
+# Logs & OS cruft
+logs/
+*.log
+npm-debug.log*
+.DS_Store
+Thumbs.db
+desktop.ini

@@ -36,6 +36,8 @@ export interface PromptRequest {
   character?: PromptCharacter | null;
   sceneKitId?: string;
   extraNegative?: string;
+  /** Prompt tab: send the user's text to the model exactly as typed (no identity, kit or default negatives). */
+  raw?: boolean;
 }
 
 export interface BuiltPrompt {
@@ -66,6 +68,9 @@ function joinPhrases(parts: (string | undefined)[]): string {
 }
 
 export function buildPrompt(req: PromptRequest): BuiltPrompt {
+  if (req.raw) {
+    return { positive: req.userPrompt.trim(), negative: (req.extraNegative ?? "").trim(), sheenWords: detectSheenWords(req.userPrompt) };
+  }
   const kit = getSceneKit(req.sceneKitId);
   const identity = req.character ? [req.character.triggerToken, req.character.descriptors].filter(Boolean).join(", ") : "";
 

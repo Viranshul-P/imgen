@@ -57,7 +57,12 @@ export interface ShootRequest {
   arcId?: string;
   priority?: number;
   label?: string;
+  /** Prompt tab: the prompt goes to the model verbatim; no scene kit, identity text or character LoRAs. */
+  rawPrompt?: boolean;
 }
+
+/** Label prefix that marks Prompt-tab jobs (the tab lists its own history by it). */
+export const RAW_PROMPT_LABEL = "Prompt";
 
 export interface PlannedJob {
   template: string;
@@ -141,18 +146,25 @@ export async function planShoot(req: ShootRequest, character: PlannerCharacter |
   const template = await loadTemplate(ENGINE_TEMPLATES[engineKey]);
   const count = req.candidateCount ?? 1;
   if (!Number.isInteger(count) || count < 1 || count > MAX_CANDIDATES) throw new BadRequestError(`candidateCount must be 1..${MAX_CANDIDATES}`);
+  const raw = req.rawPrompt === true;
+  if (raw) {
+    if (req.engine === "C") throw new BadRequestError("the Prompt tab supports Engine A (Flux) and Engine B (SDXL)");
+    if (!req.prompt?.trim()) throw new BadRequestError("type a prompt first");
+    if (req.prompt.length > 4000) throw new BadRequestError("prompt is too long (max 4000 characters)");
+  }
   if (!req.prompt?.trim() && !req.sceneKit) throw new BadRequestError("prompt or sceneKit is required");
   if (req.engine === "C" && !req.inpaint) throw new BadRequestError("Engine C needs a base stage image and a mask");
   if (req.sceneKit && !getSceneKit(req.sceneKit)) throw new BadRequestError(`unknown scene kit '${req.sceneKit}'`);
 
   const options = resolveOptions(req.options);
-  const kit = getSceneKit(req.sceneKit);
+  const kit = raw ? undefined : getSceneKit(req.sceneKit);
   const built = buildPrompt({
     engine: req.engine,
     userPrompt: req.prompt ?? "",
-    character,
-    sceneKitId: req.sceneKit,
+    character: raw ? null : character,
+    sceneKitId: raw ? undefined : req.sceneKit,
     extraNegative: req.negativePrompt,
+    raw,
   });
   const aspect = req.aspect ?? kit?.aspect ?? "4:5";
   const size = ASPECT_SIZES[req.engine === "A" ? "A" : "B"][aspect];
@@ -186,7 +198,7 @@ export async function planShoot(req: ShootRequest, character: PlannerCharacter |
   }
   const features = featuresFor(template, options, { controlnet: Boolean(req.control), ipadapter: Boolean(req.faceReferencePath) });
   const variants: Record<string, string> = req.control && template.meta.variants?.["controlMode"] ? { controlMode: req.control.mode } : {};
-  const loras = mergeLoras(req.useCharacterLora === false ? [] : characterLoras(character, template.meta.engine), req.loras);
+  const loras = mergeLoras(raw || req.useCharacterLora === false ? [] : characterLoras(character, template.meta.engine), req.loras);
 
   const seed0 = baseSeed(req.seed);
   const jobs: PlannedJob[] = [];
@@ -199,7 +211,9 @@ export async function planShoot(req: ShootRequest, character: PlannerCharacter |
       engineKind: template.meta.engine,
       modelKey: modelKeyFor(template, v),
       params: JSON.stringify(params),
-      label: req.label ?? `${kit?.label ?? `Engine ${req.engine}`}${count > 1 ? ` #${i + 1}` : ""}`,
+      label: raw
+        ? `${RAW_PROMPT_LABEL} · ${req.engine === "A" ? "Flux" : "SDXL"}${count > 1 ? ` #${i + 1}` : ""}: ${(req.prompt ?? "").trim().slice(0, 80)}`
+        : (req.label ?? `${kit?.label ?? `Engine ${req.engine}`}${count > 1 ? ` #${i + 1}` : ""}`),
       priority: req.priority ?? 0,
       stage: req.stage ?? null,
       arcId: req.arcId ?? null,

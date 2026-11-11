@@ -230,6 +230,20 @@
 
 - **Vault before/after slider:** checked manually in the browser by the user on 2026-11-11 ✅ (the Claude-in-Chrome extension wasn't connected, so it was confirmed by hand)
 
+## Post-spec addition — Prompt tab (2026-11-11, requested by the user)
+- New first tab **Prompt** (`src/components/PromptStudio.tsx`):
+  - a free-text prompt box whose text is sent to the model **verbatim**; there are no character descriptors, scene-kit text or default negatives (`buildPrompt({ raw: true })`, `ShootRequest.rawPrompt`)
+  - Flux or SDXL, 4:5 / 9:16, 1–8 images
+  - optional extras, clearly labelled as not changing the text: realism LoRAs, FaceDetailer, Phone Look
+  - advanced settings: guidance/CFG, SDXL model, seed
+  - a "Sent to the model" preview, and a results grid with live progress, cancel and "Reuse"
+- History is listed via `GET /api/jobs?labelPrefix=Prompt`
+- Verified:
+  - an API job with `rawPrompt` stored POSITIVE/NEGATIVE exactly as typed (no LoRAs, no kit)
+  - an empty prompt → 400
+  - the SDXL render (36.2 s) follows the prompt
+  - tsc / lint / build clean
+
 ---
 ## ▶ STATUS: all phases (0–7) complete — 2026-11-11
 **Build is done; every spec check is verified.** What remains is using the studio:

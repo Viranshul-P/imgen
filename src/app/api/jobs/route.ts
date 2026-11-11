@@ -18,7 +18,7 @@ async function loadCharacter(id: string | null | undefined) {
   return character;
 }
 
-/** GET /api/jobs?status=&characterId=&campaignId=&limit= */
+/** GET /api/jobs?status=&characterId=&campaignId=&labelPrefix=&limit= */
 export async function GET(request: NextRequest) {
   try {
     const q = request.nextUrl.searchParams;
@@ -29,6 +29,7 @@ export async function GET(request: NextRequest) {
         ...(status && isOneOf(JOB_STATUSES, status) ? { status } : {}),
         ...(q.get("characterId") ? { characterId: q.get("characterId") as string } : {}),
         ...(q.get("campaignId") ? { campaignId: q.get("campaignId") as string } : {}),
+        ...(q.get("labelPrefix") ? { label: { startsWith: q.get("labelPrefix") as string } } : {}),
       },
       orderBy: { createdAt: "desc" },
       take: limit,

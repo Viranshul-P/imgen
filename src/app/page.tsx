@@ -1,11 +1,12 @@
 "use client";
 
-import { Camera, Dna, Images, ListOrdered } from "lucide-react";
+import { Camera, Dna, Images, ListOrdered, Terminal } from "lucide-react";
 import * as React from "react";
 import { ArcProgressionBuilder } from "@/components/ArcProgressionBuilder";
 import { CharacterDNAEditor } from "@/components/CharacterDNAEditor";
 import { ContentVault } from "@/components/ContentVault";
 import { DatasetCurator } from "@/components/DatasetCurator";
+import { PromptStudio } from "@/components/PromptStudio";
 import { ShootGenerator } from "@/components/ShootGenerator";
 import { StudioProvider, useStudio } from "@/components/StudioContext";
 import { SystemStatusHeader } from "@/components/SystemStatusHeader";
@@ -13,6 +14,7 @@ import { Tabs } from "@/components/ui/primitives";
 import { cn } from "@/lib/utils";
 
 const TABS = [
+  { id: "prompt", label: "Prompt", icon: <Terminal /> },
   { id: "shoot", label: "Shoot", icon: <Camera /> },
   { id: "arc", label: "Progression Arc", icon: <ListOrdered /> },
   { id: "character", label: "Character & Dataset", icon: <Dna /> },
@@ -36,7 +38,7 @@ function Toast() {
 }
 
 function Studio() {
-  const [tab, setTab] = React.useState("shoot");
+  const [tab, setTab] = React.useState("prompt");
   const { catalogError } = useStudio();
   return (
     <>
@@ -44,6 +46,7 @@ function Studio() {
       <main className="mx-auto flex max-w-[1400px] flex-col gap-4 px-4 py-4">
         <Tabs items={TABS} value={tab} onChange={setTab} />
         {catalogError ? <p className="text-sm text-amber-400">Model lists unavailable: {catalogError}. Start ComfyUI and press Refresh Models.</p> : null}
+        {tab === "prompt" ? <PromptStudio /> : null}
         {tab === "shoot" ? <ShootGenerator /> : null}
         {tab === "arc" ? <ArcProgressionBuilder /> : null}
         {tab === "character" ? (

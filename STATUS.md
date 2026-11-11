@@ -163,23 +163,55 @@
 - **The embedded Python must run with `-I`.** Without it, an older numpy 2.1.1 / Pillow 12.3 in the Windows user site-packages shadows the embedded numpy 2.5.4 / Pillow 13.0.
 - The worker hook is exercised on full-size renders in Phase 7 (ComfyUI was not running during Phase 5).
 
+## Phase 6 — Free Local 8 GB LoRA Training ✅ COMPLETE (2026-11-11)
+**Completed**
+- `scripts/prepare_dataset.py` (stdlib + Pillow, embedded Python `-I`): approved frames (from a studio manifest or straight from `prisma/dev.db`) produce:
+  - `img/<repeats>_<trigger> woman/NNNN.png + .txt`
+  - kohya `dataset_sdxl.toml` / `dataset_flux.toml` (explicit `num_repeats`)
+  - rendered `train_sdxl.ps1` / `train_flux.ps1` (+ `.json`)
+  - OneTrainer `sdxl_lora.json` / `flux_lora_nf4.json` / `concepts.json` (config v11 / concept v2)
+  - `README.txt`, `export.json`, optional zip
+  - Captions: `<trigger> woman, <framing, angle, light, expression>`; fixed identity traits are left out on purpose, and Curator caption overrides are respected. Duplicates and missing files are skipped with warnings.
+  - Model paths are resolved through `extra_model_paths.yaml` (character checkpoint → RealVisXL → Juggernaut; clip_l, t5xxl_fp8, ae). Trained LoRAs save straight into `ComfyUI\models\loras`.
+  - Refuses to overwrite a folder that isn't a previous export.
+- `training/presets/`: `onetrainer_sdxl_lora_8gb.json`, `onetrainer_flux_lora_8gb_nf4.json`, `kohya_sdxl_lora_8gb.json`, `kohya_flux_lora_8gb.json`
+- `POST /api/datasets {action:"export", characterId, repeats}` (`src/lib/datasetExport.ts`) plus Dataset Curator controls: a repeats slider, an "Export N approved frames for training" button, a zip download and warnings
+- `src/lib/python.ts`: shared isolated-Python runner (the finisher now uses it too); script input errors map to HTTP 400
+- `docs/TRAINING.md`:
+  - Recipe A, SDXL: Adafactor, grad checkpointing, bf16, cached latents + TE outputs, dim/alpha 16, 1024, bs 1, 1400 steps
+  - Recipe B, Flux: OneTrainer NF4 + offload / kohya fp8 + blocks_to_swap 28 / FluxGym 12G, rank 16, adafactor, 512 buckets
+  - install steps, the Cross-Engine Face Lock explanation, and the sources checked
+
+**Verified checks**
+- Config formats checked against current upstream source (2026-11-11): OneTrainer `TrainConfig.py` v11, `ConceptConfig.py`, enum files and official presets; sd-scripts SDXL/FLUX/config docs; FluxGym `app.py`
+- Manifest export of 7 test images (+1 missing):
+  - 7 written, captions correct, override kept, missing file warned
+  - only FLUX_DEV flagged unresolved (expected: full flux1-dev isn't downloaded)
+  - both `.toml` files parse (tomllib), all OneTrainer JSON parses, both `.ps1` launchers parse with 0 PowerShell errors
+- DB mode: 0 approved → clean exit 2; unknown trigger → exit 2
+- Live API with a temporary approved frame: export 201, zip served (200, application/zip); repeats 0 / unknown character → 400; Vault finisher still OK after the refactor. Temporary rows and files removed afterwards.
+- `tsc` 0 errors · `npm run lint` 0 · `npm run build` success, 0 warnings · `py_compile` OK
+
+**Deviations / notes**
+- sd-scripts marks `--split_mode` as deprecated in favour of `--blocks_to_swap`; its 8 GB row is `--blocks_to_swap 28` + fp8, which the kohya Flux preset uses. FluxGym's lowest option is 12G (its 8G branch is commented out); TRAINING.md says so.
+- With `--dataset_config`, kohya ignores repeats in folder names, so `num_repeats` is written into the TOML (the folder still follows the convention for GUI users).
+- Prodigy: OneTrainer `PRODIGY` is documented in TRAINING.md. The sd-scripts Prodigy optimizer string is not in its docs, so the kohya presets ship Adafactor only.
+- OneTrainer `prompt_source` is left at its default `"sample"` (per-image `.txt`). The other accepted values could not be read upstream.
+- Recipe B needs the full FLUX.1-dev weights (gated, free licence, ~24 GB). They are not downloaded automatically.
+- No actual LoRA training run yet: it needs a real approved genesis dataset (Phase 7) and a trainer installed outside ComfyUI.
+
 ---
-## ▶ RESUME HERE (paused 2026-11-11 after Phase 5)
-**Next:** Phase 6 → 7 (spec section 8).
-1. **Phase 6:** `docs/TRAINING.md`:
-   - Recipe A: SDXL LoRA on 8 GB via OneTrainer/kohya (Adafactor/Prodigy, grad checkpointing, bf16, cached latents + TE outputs, dim/alpha 16, 1024, bs 1, 1400 steps)
-   - Recipe B: Flux LoRA (OneTrainer NF4 offload / FluxGym split mode, rank 8/16, adafactor, 512/768 buckets) + how the Cross-Engine SDXL Face Lock covers Flux before a Flux LoRA exists
-   - JSON config presets in `training/`
-   - `scripts/prepare_dataset.py` (`<repeats>_<trigger> woman/` + `.txt` captions from approved dataset frames)
-   - a dataset export action in `/api/datasets` and a button in DatasetCurator
-2. **Phase 7:**
-   - `npm run build` + `npm run lint` + `npm run validate:workflows`
-   - one full-size render each on Engine A, B and C through the worker, with the Phone Look Finisher on (log speed + peak VRAM in `docs/BENCHMARKS.md`, confirm the /free flush between A and B)
-   - finish the outputs with `iphone_indoor_warm` + `iphone_dim_bedroom_high_iso` and check the before/after slider in the Vault in a browser
-   - `genesis_dataset` end to end with a real master_face
-   - **Close Chrome and other heavy apps before Engine A** (Flux needs ~10 GB free RAM).
+## ▶ RESUME HERE (paused 2026-11-11 after Phase 6)
+**Next:** Phase 7 (spec section 8.2) - end-to-end verification.
+1. `npm run build` + `npm run lint` (both passed at the end of Phase 6) + `npm run validate:workflows` (needs ComfyUI up)
+2. One full-size render each on Engine A, B and C through the worker with the Phone Look Finisher on:
+   - log speed + peak VRAM in `docs/BENCHMARKS.md`
+   - confirm the worker's /free flush between A and B (WorkerState.flushCount / worker log)
+3. Finish the outputs with `iphone_indoor_warm` + `iphone_dim_bedroom_high_iso`, and check the Vault before/after slider in a browser
+4. `genesis_dataset` end to end with a real master_face (genesis_master_face_candidates → pick one → dataset); approve frames, then run the Dataset Curator export
+5. **Close Chrome and other heavy apps before Engine A** (Flux needs ~10 GB free RAM). The dev server was stopped at the end of Phase 6.
 
 **How to start everything again**
 - ComfyUI: `powershell -ExecutionPolicy Bypass -File scripts\start_comfy_api.ps1 -Background` (check with `-Status`)
-- Studio + worker: `npm run dev` → http://localhost:3000
-- Test data in the DB: character "Test Vira" (`pf_test_vira`), one Engine B render in `data/raw/`, plus 2 finished versions of it.
+- Studio + worker: `npm run dev` → http://localhost:3000. Stop the dev server before `npm run build`: it locks Prisma's engine DLL.
+- Test data in the DB: character "Test Vira" (`pf_test_vira`), one Engine B render in `data/raw/`, plus 3 finished versions of it.

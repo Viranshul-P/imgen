@@ -73,20 +73,36 @@ function Invoke-Step([string]$Label, [scriptblock]$Body) {
   & $Body
 }
 
+# Windows PowerShell 5.1 turns any native stderr output into a terminating error when
+# $ErrorActionPreference is 'Stop'. Native tools (pip, git, python) write warnings to stderr,
+# so run them with 'Continue' and judge success by exit code only.
+function Invoke-Native([scriptblock]$Cmd) {
+  $prev = $ErrorActionPreference
+  $ErrorActionPreference = 'Continue'
+  try { & $Cmd 2>&1 | ForEach-Object { "$_" } } finally { $ErrorActionPreference = $prev }
+}
+
+function Test-PyImport([string]$Module) {
+  [void](Invoke-Native { & $Python -s -c "import $Module" })
+  return ($LASTEXITCODE -eq 0)
+}
+
 function Invoke-Pip([string[]]$PipArgs) {
-  & $Python -s -m pip @PipArgs --disable-pip-version-check --no-warn-script-location
+  $extra = @('--disable-pip-version-check')
+  if ($PipArgs[0] -eq 'install') { $extra += '--no-warn-script-location' }
+  Invoke-Native { & $Python -s -m pip @PipArgs @extra } | Write-Host
   if ($LASTEXITCODE -ne 0) { throw "pip $($PipArgs -join ' ') failed (exit $LASTEXITCODE)" }
 }
 
 # ------------------------------------------------------------------ backup
 $stamp = Get-Date -Format 'yyyyMMdd-HHmmss'
 Invoke-Step 'Backing up pip freeze and custom_nodes list' {
-  & $Python -s -m pip freeze --disable-pip-version-check | Out-File -Encoding utf8 (Join-Path $LogDir "comfy_pip_backup-$stamp.txt")
+  Invoke-Native { & $Python -s -m pip freeze --disable-pip-version-check } | Out-File -Encoding utf8 (Join-Path $LogDir "comfy_pip_backup-$stamp.txt")
   Get-ChildItem $NodesDir -Directory | Select-Object -ExpandProperty Name | Out-File -Encoding utf8 (Join-Path $LogDir "custom_nodes_backup-$stamp.txt")
   Write-Host "   saved to logs\comfy_pip_backup-$stamp.txt"
 }
 
-$pyTag = (& $Python -c "import sys;print(f'cp{sys.version_info.major}{sys.version_info.minor}')").Trim()
+$pyTag = ((Invoke-Native { & $Python -c "import sys;print(f'cp{sys.version_info.major}{sys.version_info.minor}')" }) | Select-Object -Last 1).Trim()
 Write-Host "Embedded Python ABI: $pyTag"
 
 # ------------------------------------------------------------------ clone
@@ -94,12 +110,12 @@ foreach ($r in $Repos) {
   if ($SkipReactor -and $r.ContainsKey('optional')) { continue }
   $dest = Join-Path $NodesDir $r.name
   if (Test-Path (Join-Path $dest '.git')) {
-    if ($Update) { Invoke-Step "Updating $($r.name)" { git -C $dest pull --ff-only } }
+    if ($Update) { Invoke-Step "Updating $($r.name)" { Invoke-Native { git -C $dest pull --ff-only } | Write-Host } }
     else { Write-Host "   [ok] $($r.name) already present" }
     continue
   }
   Invoke-Step "Cloning $($r.url)" {
-    git clone --depth 1 $r.url $dest
+    Invoke-Native { git clone --depth 1 $r.url $dest } | Write-Host
     if ($LASTEXITCODE -ne 0) { throw "git clone failed for $($r.url)" }
   }
 }
@@ -112,11 +128,38 @@ Invoke-Step 'Installing ComfyUI-Manager (pip package, enabled with --enable-mana
 }
 
 # ------------------------------------------------------------------ insightface
-Invoke-Step 'Installing insightface (prebuilt wheel if needed)' {
-  & $Python -s -c "import insightface" 2>$null
-  if ($LASTEXITCODE -eq 0) { Write-Host '   insightface already importable'; return }
-  $wheel = "insightface-0.7.3-$pyTag-$pyTag-win_amd64.whl"
-  Invoke-Pip @('install', "$InsightfaceWheelBase/$wheel")
+Invoke-Step 'Installing insightface (built from source against the embedded numpy)' {
+  if (Test-PyImport 'insightface.app') { Write-Host '   insightface already importable'; return }
+  # insightface has no Windows wheels on PyPI, and the community prebuilt wheels are compiled
+  # against numpy 1.x, which fails on ComfyUI's numpy 2.x ("numpy.dtype size changed").
+  # The embedded Python has no C headers, so build the wheel with a host CPython of the same
+  # ABI (pip wheel uses an isolated build env - nothing is installed into the host Python).
+  $verDot = $pyTag.Substring(2, 1) + '.' + $pyTag.Substring(3)
+  $hostPy = $null
+  foreach ($cand in @($env:PF_HOST_PYTHON, "C:\Program Files\Python$($pyTag.Substring(2))\python.exe",
+      "$env:LOCALAPPDATA\Programs\Python\Python$($pyTag.Substring(2))\python.exe")) {
+    if ($cand -and (Test-Path $cand)) { $hostPy = $cand; break }
+  }
+  if (-not $hostPy) {
+    $py = Get-Command py -ErrorAction SilentlyContinue
+    if ($py) {
+      $p = (Invoke-Native { & py "-$verDot" -c "import sys;print(sys.executable)" }) | Select-Object -Last 1
+      if ($LASTEXITCODE -eq 0 -and $p -and (Test-Path $p.Trim())) { $hostPy = $p.Trim() }
+    }
+  }
+  $wheelDir = Join-Path $LogDir 'wheels'
+  if (-not (Test-Path $wheelDir)) { New-Item -ItemType Directory -Force $wheelDir | Out-Null }
+  if ($hostPy) {
+    Write-Host "   building insightface wheel with host Python $hostPy (requires MSVC Build Tools)"
+    Invoke-Native { & $hostPy -m pip wheel insightface==0.7.3 --no-deps -w $wheelDir --disable-pip-version-check } | Write-Host
+    if ($LASTEXITCODE -ne 0) { throw 'insightface source build failed - install Visual Studio Build Tools (C++ workload)' }
+    $wheel = Get-ChildItem $wheelDir -Filter "insightface-0.7.3-$pyTag-*.whl" | Select-Object -First 1
+    Invoke-Pip @('install', '--force-reinstall', $wheel.FullName)
+  }
+  else {
+    Write-Host "   no host Python $verDot found - falling back to prebuilt wheel (numpy 1.x ABI)" -ForegroundColor Yellow
+    Invoke-Pip @('install', "$InsightfaceWheelBase/insightface-0.7.3-$pyTag-$pyTag-win_amd64.whl")
+  }
 }
 
 # ------------------------------------------------------------------ core shared deps
@@ -138,10 +181,24 @@ foreach ($r in $Repos) {
   }
 }
 
+# comfyui_controlnet_aux uses albumentationsx (maintained fork); ReActor's "albumentations>=1.4.16"
+# pulls the legacy package, which pins an old albucore and overwrites the same import namespace,
+# breaking insightface. Keep only albumentationsx (it provides `import albumentations`).
+Invoke-Step 'Resolving albumentations / albumentationsx namespace clash' {
+  [void](Invoke-Native { & $Python -s -m pip show albumentationsx --disable-pip-version-check })
+  if ($LASTEXITCODE -ne 0) { Write-Host '   albumentationsx not installed - nothing to resolve'; return }
+  [void](Invoke-Native { & $Python -s -m pip show albumentations --disable-pip-version-check })
+  if ($LASTEXITCODE -eq 0) { Invoke-Pip @('uninstall', '-y', 'albumentations') }
+  $ver = ((Invoke-Native { & $Python -s -m pip show albumentationsx --disable-pip-version-check }) |
+      Select-String '^Version:\s*(.+)$' | Select-Object -First 1).Matches[0].Groups[1].Value.Trim()
+  Invoke-Pip @('install', '--force-reinstall', '--no-deps', "albumentationsx==$ver")
+  Invoke-Pip @('install', "albumentationsx==$ver")   # restores its pinned albucore
+}
+
 # A node may pull CPU-only onnxruntime, which shadows onnxruntime-gpu: keep only the GPU build.
 Invoke-Step 'Ensuring onnxruntime-gpu is the active onnxruntime' {
-  $cpuOrt = & $Python -s -m pip show onnxruntime --disable-pip-version-check 2>$null
-  if ($cpuOrt) {
+  [void](Invoke-Native { & $Python -s -m pip show onnxruntime --disable-pip-version-check })
+  if ($LASTEXITCODE -eq 0) {
     Invoke-Pip @('uninstall', '-y', 'onnxruntime')
     Invoke-Pip @('install', '--force-reinstall', '--no-deps', 'onnxruntime-gpu')
   }
@@ -149,14 +206,14 @@ Invoke-Step 'Ensuring onnxruntime-gpu is the active onnxruntime' {
 
 # ------------------------------------------------------------------ verification
 Invoke-Step 'pip check' {
-  & $Python -s -m pip check --disable-pip-version-check
+  Invoke-Native { & $Python -s -m pip check --disable-pip-version-check } | Write-Host
   if ($LASTEXITCODE -ne 0) { Write-Host '   pip check reported conflicts (see above)' -ForegroundColor Yellow }
 }
 
 Invoke-Step 'Import smoke test' {
   $code = @'
 import importlib, sys
-mods = ["torch", "insightface", "onnxruntime", "gguf", "ultralytics", "cv2", "PIL", "numpy", "huggingface_hub", "segment_anything"]
+mods = ["torch", "insightface.app", "onnxruntime", "gguf", "ultralytics", "cv2", "PIL", "numpy", "huggingface_hub", "segment_anything"]
 bad = 0
 for m in mods:
     try:
@@ -169,7 +226,10 @@ import onnxruntime as ort
 print("   onnxruntime providers:", ", ".join(ort.get_available_providers()))
 sys.exit(1 if bad else 0)
 '@
-  & $Python -s -c $code
+  # PS 5.1 mangles embedded double quotes in native args, so run the probe from a file.
+  $probe = Join-Path $LogDir 'import_smoke.py'
+  [System.IO.File]::WriteAllText($probe, $code, (New-Object System.Text.UTF8Encoding($false)))
+  Invoke-Native { & $Python -s $probe } | Write-Host
   if ($LASTEXITCODE -ne 0) { throw 'Import smoke test failed' }
 }
 

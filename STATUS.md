@@ -84,3 +84,23 @@
 - The xinsir OpenPose file is now `diffusion_pytorch_model_twins.safetensors` (underscore instead of the spec's dot).
 - CLIP-ViT-H: the repo publishes a real `open_clip_model.safetensors`. That file is used instead of renaming the `.bin` pickle to `.safetensors`, which would not load.
 - Amateur Photography LoRA: `ujouy/Amateur_Photography_FluxDev` → `amateurphoto-v6-forcu.safetensors`, saved as `flux_amateur_photography.safetensors`. The `isaiahbjork` mirror is kept as a fallback.
+
+## Phase 3 — Live-Schema Workflow Templates & Smoke Validator ✅ COMPLETE (2026-11-11)
+**Completed**
+- Six API-format templates in `workflows/`, built only from the live `GET /object_info` schema (every class_type and input name dumped and checked first):
+  - `engine_a_flux_lifestyle`: UnetLoaderGGUF → LoRA chain → DualCLIPLoaderGGUF(flux) → FluxGuidance 2.6 → BasicGuider/RandomNoise/KSamplerSelect(euler)/BasicScheduler(beta, 24) → EmptySD3LatentImage 896×1152 → SamplerCustomAdvanced → VAEDecode → optional FaceDetailer (0.28) → optional upscale/downscale → SaveImage
+  - `engine_b_sdxl_editorial`: checkpoint → LoRA chain → pos/neg → optional ControlNet (DWPose or Depth Anything V2 variant, strength 0.70, end 0.82) → optional IP-Adapter FaceID Plus v2 → KSampler (28, cfg 5, dpmpp_2m_sde/karras) → FaceDetailer (0.30) → optional hand detailer (0.35) → optional upscale → SaveImage
+  - `engine_c_wardrobe_inpaint`: LoadImage + LoadImageMask → GrowMask 12 → ImpactGaussianBlurMask → InpaintCropImproved → InpaintModelConditioning(noise_mask) → DifferentialDiffusion → KSampler (denoise 0.75) → InpaintStitchImproved → ImageCompositeMasked pixel lock → SaveImage
+  - `genesis_master_face_candidates`, `genesis_dataset` (IP-Adapter FaceID Plus v2 from master_face), `cross_engine_face_lock` (SDXL FaceDetailer 0.35)
+- `src/lib/workflowInjector.ts`: variants, removal of disabled optional blocks with declared bypass rewiring, native `LoraLoader` / `LoraLoaderModelOnly` chains (any count, weights −1..2), typed and range-checked placeholders, forced `batch_size = 1`
+- `src/lib/comfySchema.ts`: prompt validation against `/object_info` (class registered, required inputs, enums, numeric ranges, link output types)
+- `scripts/validate_workflows.ts`: static matrix plus 256×256 / 2-step smoke runs, with `POST /free` between engine switches
+
+**Verified checks**
+- Static: **15/15** feature × variant combinations valid against the live schema
+- Smoke (2 steps, 256×256, with a LoRA in each chain): face_lock 4.2 s ✅ · *flush SDXL→Flux* · engine_a 25.8 s ✅ · *flush Flux→SDXL* · engine_b 6.8 s ✅ · engine_c 3.8 s ✅ · master_face_candidates 0.8 s ✅
+- **Engine C pixel lock measured:** 37,376 px outside mask + 32 px feather margin, **0 changed (max diff 0)**. The masked region was repainted (mean diff 114).
+- `genesis_dataset` was validated statically only: IP-Adapter FaceID raises on synthetic input without a face. It gets an end-to-end run in Phase 7 with a real master_face.png.
+
+**Notes**
+- ReActor is installed but deliberately not wired into any graph (`enableReactorSwap: true` is rejected). Identity comes from the Character LoRA and IP-Adapter FaceID.

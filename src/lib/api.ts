@@ -1,6 +1,7 @@
 /** Route-handler helpers: JSON responses and consistent error mapping. */
 import { NextResponse } from "next/server";
 import { ComfyError } from "./comfyClient";
+import { PythonScriptError } from "./python";
 import { BadRequestError } from "./types";
 import { WorkflowInjectionError } from "./workflowInjector";
 
@@ -9,6 +10,7 @@ export function json<T>(data: T, status = 200): NextResponse<T> {
 }
 
 export function errorResponse(err: unknown): NextResponse<{ error: string; details?: unknown }> {
+  if (err instanceof PythonScriptError && err.userError) return NextResponse.json({ error: err.message }, { status: 400 });
   if (err instanceof BadRequestError || err instanceof WorkflowInjectionError) return NextResponse.json({ error: err.message }, { status: 400 });
   if (err instanceof ComfyError) return NextResponse.json({ error: err.message, details: err.details }, { status: 502 });
   const message = err instanceof Error ? err.message : String(err);

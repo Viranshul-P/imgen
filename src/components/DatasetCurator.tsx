@@ -1,10 +1,20 @@
 "use client";
 
-import { Check, Database, X } from "lucide-react";
+import { Check, Database, Download, X } from "lucide-react";
 import * as React from "react";
 import { Badge, Button, Card, CardContent, CardDescription, CardHeader, CardTitle, Input, Slider } from "@/components/ui/primitives";
 import { cn, fileUrl } from "@/lib/utils";
 import { api, postJson, useStudio } from "./StudioContext";
+
+interface ExportResult {
+  images: number;
+  repeats: number;
+  steps_per_epoch: number;
+  class_tokens: string;
+  folder: string;
+  zipUrl: string | null;
+  warnings: string[];
+}
 
 interface Frame {
   id: string;
@@ -17,6 +27,9 @@ export function DatasetCurator({ footer }: { footer?: React.ReactNode }) {
   const { character, notify, jobs } = useStudio();
   const [frames, setFrames] = React.useState<Frame[]>([]);
   const [count, setCount] = React.useState(35);
+  const [repeats, setRepeats] = React.useState(10);
+  const [exporting, setExporting] = React.useState(false);
+  const [lastExport, setLastExport] = React.useState<ExportResult | null>(null);
   const finished = jobs.filter((j) => j.status === "done" && j.template === "genesis_dataset").length;
 
   const [reloadTick, setReloadTick] = React.useState(0);
@@ -53,6 +66,20 @@ export function DatasetCurator({ footer }: { footer?: React.ReactNode }) {
       notify("ok", `Queued ${res.queued} dataset frames (IP-Adapter FaceID Plus v2)`);
     } catch (err) {
       notify("error", err instanceof Error ? err.message : String(err));
+    }
+  };
+
+  const exportForTraining = async (): Promise<void> => {
+    if (!character) return;
+    setExporting(true);
+    try {
+      const res = await postJson<ExportResult>("/api/datasets", { action: "export", characterId: character.id, repeats });
+      setLastExport(res);
+      notify("ok", `Exported ${res.images} images for LoRA training (${res.class_tokens})`);
+    } catch (err) {
+      notify("error", err instanceof Error ? err.message : String(err));
+    } finally {
+      setExporting(false);
     }
   };
 
@@ -104,6 +131,34 @@ export function DatasetCurator({ footer }: { footer?: React.ReactNode }) {
           ))}
         </div>
         {frames.length === 0 ? <p className="text-sm text-muted-foreground">No dataset frames yet.</p> : null}
+        <div className="flex flex-col gap-2 rounded-lg border border-border p-3">
+          <span className="text-xs font-medium text-muted-foreground">Train the Character LoRA locally (OneTrainer / kohya_ss - see docs/TRAINING.md)</span>
+          <div className="flex flex-wrap items-center gap-3">
+            <Slider value={repeats} min={1} max={30} step={1} onChange={setRepeats} className="w-48" label="repeats per image" format={(v) => `${v}x repeat`} />
+            <Button onClick={() => void exportForTraining()} disabled={exporting || approved === 0}>
+              <Download /> {exporting ? "Exporting..." : `Export ${approved} approved frames for training`}
+            </Button>
+            {approved > 0 && approved < 15 ? <Badge variant="warning">25-40 approved frames recommended</Badge> : null}
+          </div>
+          {lastExport ? (
+            <div className="flex flex-col gap-1 text-xs text-muted-foreground">
+              <span>
+                {lastExport.images} images x {lastExport.repeats} = {lastExport.steps_per_epoch} steps/epoch, captions start with &quot;{lastExport.class_tokens}&quot;. Folder: data/
+                {lastExport.folder} (README.txt inside has the exact steps).
+              </span>
+              {lastExport.zipUrl ? (
+                <a href={lastExport.zipUrl} download className="text-primary underline">
+                  Download training bundle (.zip)
+                </a>
+              ) : null}
+              {lastExport.warnings.map((w) => (
+                <span key={w} className="text-amber-400">
+                  {w}
+                </span>
+              ))}
+            </div>
+          ) : null}
+        </div>
         {footer}
       </CardContent>
     </Card>

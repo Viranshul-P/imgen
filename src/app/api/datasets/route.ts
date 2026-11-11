@@ -1,14 +1,17 @@
 import type { NextRequest } from "next/server";
 import { errorResponse, json, readJson, requireString } from "@/lib/api";
+import { exportDataset } from "@/lib/datasetExport";
 import { DATASET_SIZE, planDatasetFrames } from "@/lib/jobPlanner";
 import { prisma } from "@/lib/prisma";
 import { BadRequestError } from "@/lib/types";
 
 export const dynamic = "force-dynamic";
+export const maxDuration = 300;
 
 type DatasetPost =
   | { action: "generate"; characterId: string; count?: number; seed?: number }
-  | { action: "review"; assetId: string; approved: boolean | null; caption?: string };
+  | { action: "review"; assetId: string; approved: boolean | null; caption?: string }
+  | { action: "export"; characterId: string; repeats?: number; classWord?: string };
 
 /** GET /api/datasets?characterId= - dataset frames for curation. */
 export async function GET(request: NextRequest) {
@@ -25,7 +28,10 @@ export async function GET(request: NextRequest) {
   }
 }
 
-/** POST /api/datasets - generate the 35-image genesis dataset, or approve/reject a frame. */
+/**
+ * POST /api/datasets - generate the 35-image genesis dataset, approve/reject a frame, or export the
+ * approved frames as a OneTrainer / kohya_ss training folder + zip (Phase 6, scripts/prepare_dataset.py).
+ */
 export async function POST(request: NextRequest) {
   try {
     const body = await readJson<DatasetPost>(request);
@@ -43,7 +49,11 @@ export async function POST(request: NextRequest) {
       });
       return json(asset);
     }
-    throw new BadRequestError("action must be generate or review");
+    if (body.action === "export") {
+      const result = await exportDataset(requireString(body.characterId, "characterId"), body.repeats ?? 10, body.classWord ?? "woman");
+      return json(result, 201);
+    }
+    throw new BadRequestError("action must be generate, review or export");
   } catch (err) {
     return errorResponse(err);
   }

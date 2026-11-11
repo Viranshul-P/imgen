@@ -1,14 +1,7 @@
-/**
- * Server-side bridge to scripts/realism_finish.py (Phase 5 smartphone ISP finisher).
- *
- * Runs ComfyUI's embedded Python (COMFY_PYTHON) in isolated mode (-I): without it a numpy/Pillow
- * from the Windows user site-packages can shadow the embedded ones and break cv2.
- */
-import { spawn } from "node:child_process";
-import { existsSync } from "node:fs";
-import path from "node:path";
+/** Server-side bridge to scripts/realism_finish.py (Phase 5 smartphone ISP finisher). */
 import { prisma } from "./prisma";
 import { resolveDataPath, toDataRelative } from "./paths";
+import { runPythonJson } from "./python";
 import {
   BadRequestError,
   DEFAULT_FINISHER_WEIGHTS,
@@ -35,19 +28,6 @@ export interface FinishOutput {
   width: number;
   height: number;
   ms: number;
-}
-
-const TIMEOUT_MS = 10 * 60_000;
-
-function scriptPath(): string {
-  return path.resolve(/* turbopackIgnore: true */ process.cwd(), "scripts", "realism_finish.py");
-}
-
-function pythonPath(): string {
-  const python = process.env["COMFY_PYTHON"];
-  if (!python) throw new Error("COMFY_PYTHON is not set in .env.local (Phase 0 writes it)");
-  if (!existsSync(python)) throw new Error(`COMFY_PYTHON not found: ${python}`);
-  return python;
 }
 
 /** Validate and fill untrusted finisher settings (API bodies, job options). */
@@ -78,8 +58,6 @@ export async function runFinisher(inputs: string[], settings: FinishSettings, bu
   if (inputs.length === 0) throw new BadRequestError("no images to finish");
   const outDir = resolveDataPath("finished");
   const args = [
-    "-I",
-    scriptPath(),
     ...inputs.map((rel) => resolveDataPath(rel)),
     "--out-dir",
     outDir,
@@ -94,30 +72,7 @@ export async function runFinisher(inputs: string[], settings: FinishSettings, bu
     ...(bundle ? ["--bundle", resolveDataPath(bundle)] : []),
   ];
 
-  const { stdout, stderr, code } = await new Promise<{ stdout: string; stderr: string; code: number | null }>((resolve, reject) => {
-    const child = spawn(pythonPath(), args, { windowsHide: true, stdio: ["ignore", "pipe", "pipe"] });
-    let out = "";
-    let err = "";
-    child.stdout.setEncoding("utf8").on("data", (d: string) => (out += d));
-    child.stderr.setEncoding("utf8").on("data", (d: string) => (err += d));
-    const timer = setTimeout(() => child.kill(), TIMEOUT_MS);
-    child.on("error", (e) => {
-      clearTimeout(timer);
-      reject(e);
-    });
-    child.on("close", (exitCode) => {
-      clearTimeout(timer);
-      resolve({ stdout: out, stderr: err, code: exitCode });
-    });
-  });
-
-  if (code !== 0) throw new Error(`realism_finish.py failed (exit ${code}): ${stderr.trim().split(/\r?\n/).slice(-3).join(" | ") || "no output"}`);
-  let parsed: { results: { input: string; output: string; width: number; height: number; ms: number }[]; bundle: string | null };
-  try {
-    parsed = JSON.parse(stdout.trim().split(/\r?\n/).pop() ?? "") as typeof parsed;
-  } catch {
-    throw new Error(`realism_finish.py returned unreadable output: ${stdout.slice(0, 300)}`);
-  }
+  const parsed = await runPythonJson<{ results: FinishOutput[]; bundle: string | null }>("realism_finish.py", args);
   return {
     results: parsed.results.map((r) => ({ ...r, input: toDataRelative(r.input), output: toDataRelative(r.output) })),
     bundle: parsed.bundle ? toDataRelative(parsed.bundle) : null,

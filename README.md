@@ -23,5 +23,8 @@ persona-forge/
 
 ComfyUI itself lives outside the repo, in `../ComfyUI_windows_portable`. Model weights are shared from existing folders through `extra_model_paths.yaml` and are never committed.
 
+## Cloud GPU
+The header can switch between the laptop GPU and a rented cloud GPU reached through an SSH tunnel. See [`docs/CLOUD.md`](docs/CLOUD.md) and `scripts/vultr_cloud_setup.sh`.
+
 ## Status
 See [`STATUS.md`](STATUS.md) for the phase-by-phase build log.

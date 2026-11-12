@@ -42,3 +42,15 @@ Full-size runs (Phase 7, 2026-11-11, through the queue worker, Phone Look Finish
 
 The old `upscale` feature only model-upscales and resizes (sharper, but no new detail). `hiresFix` re-samples the 1.5x image at denoise 0.35, so skin, eyes, hair and fabric are actually redrawn at the larger size before FaceDetailer runs on the bigger face.
 
+
+## v2.5 (2026-11-12) - Flux without the hi-res pass, structure clone
+| Job | Size | Time | Peak VRAM | Notes |
+|---|---|---|---|---|
+| A - Flux GGUF + T5 Q3_K_S + FaceDetailer, **Detail Daemon on** | 896x1152 | **208.6 s** | 7,037 MB | ~7.5 GB RAM free, first Flux job after an SDXL job (includes the model swap) |
+| A - same prompt and seed, Detail Daemon off | 896x1152 | 205.5 s | 6,973 MB | Detail Daemon costs about 3 s |
+| B - structure clone, hybrid | 832x1216 | 42.9 s | - | depth ControlNet + img2img from the reference |
+| B - structure clone, new room | 832x1216 | 117.8 s | - | depth + DWPose; includes loading the pose models |
+| C - inpaint with neutral fill | 832x1216 | 26-31 s | - | pixel lock: 0 of 2.06M outside pixels changed |
+| Auto-mask (SegFormer, CPU) | 1344x1728 | a few seconds | CPU | runs while the GPU is busy |
+
+The Phase 7 Flux number (165 s) was measured with different free RAM and a different load order, so the two are not directly comparable; free RAM changes Flux load time a lot.

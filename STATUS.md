@@ -272,3 +272,18 @@
 - Studio + worker: `npm run dev` → http://localhost:3000. Stop the dev server before `npm run build`: it locks Prisma's engine DLL.
 - Close heavy apps before Flux (Engine A) runs. ~10 GB free RAM gives the fastest loads.
 - Test data in the DB: character "Test Vira" (`pf_test_vira`) with a master face, 6 approved dataset frames, Phase 7 renders + finished versions.
+
+---
+## v2.5 upgrades (2026-11-12, requested by the user)
+1. **Detail Daemon + RAM** - ComfyUI-Detail-Daemon wraps the sampler in Engines A and B (`detailDaemon` feature, on by default; 0.25 Flux / 0.15 SDXL, start 0.2, end 0.8, bias 0.15, smooth). Engine B's base pass moved from `KSampler` to `SamplerCustomAdvanced` so the sampler can be wrapped. The hi-res pass is now off by default (still an optional checkbox). T5 Q3_K_S (2.1 GB) is the default Flux text encoder; Q5_K_M stays available.
+   - Measured, Flux 896x1152, same prompt and seed: **208.6 s with Detail Daemon, 205.5 s without** (about 3 s extra), peak 7.0 GB. The old default render with the hi-res pass took 350 s.
+2. **Reference Photo Structure Clone** - `engine_ab_structure_clone` (SDXL): hybrid = depth ControlNet (0.48, end 0.60) + the photo as the img2img base (denoise 0.72-0.82); newRoom = empty latent + depth (0.45) + DWPose (0.65). Panel in the Shoot tab (Engine B). Tested with a real reference: posture, camera angle and framing carried over in both modes; hybrid also kept the room layout and light.
+3. **Auto clothing mask** - Comfyui_segformer_b2_clothes + models; `POST /api/comfy/auto-mask`; toolbar in the mask canvas (used by the Shoot and Arc tabs). The node's toggles are inverted, so the workflow subtracts an all-on run. Engine C got `neutralFill` (default on) and a default denoise of 0.88. Tested: black turtleneck over a cream sweater, no ghost colour, 0 of 2.06M pixels outside the mask changed.
+4. **Multi-bucket dataset** - bucket per frame (face / body / chest / lower), per-character sub-tokens, one training folder per bucket, 50-image cap, and `Generate Cloud Training Bundle (.zip)` (ai-toolkit Flux 24/48/80 GB YAML + kohya and OneTrainer SDXL configs with cloud paths + README_CLOUD.txt). YAML/JSON/shell outputs parse; not yet trained.
+5. **Local / remote GPU switcher** - header selector, stored in `WorkerState`, followed by the worker. Remote mode: native FP16 Flux template (`engine_a_flux_native`), larger sizes, `/free` only when switching Flux <-> SDXL. `scripts/vultr_cloud_setup.sh` + `docs/CLOUD.md`. The script passes `bash -n` but has **not been run on a real Ubuntu/Vultr machine**.
+6. **Not done on purpose:** `contentSafety.ts` (the minor-safety guard) was kept. The ReActor toggle is still rejected pending the user's decision.
+
+**Deviations / notes**
+- `Comfyui_segformer_b2_clothes` pins `transformers==4.33.2`; installing it would downgrade ComfyUI's transformers 5.x, so its requirements.txt is skipped. The pack also loads `segformer_b3_fashion` at import, so that model is downloaded too, or the whole pack fails to import.
+- Fixed while testing: the character editor re-sent `defaultLoras` as a string on every save (double-encoding it); it now sends only the fields it edits.
+- Validator: 25/25 static combinations; smoke 6 passed, 3 skipped by design (needs a real face, or the FP16 Flux model that is only on the cloud machine).

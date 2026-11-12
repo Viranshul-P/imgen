@@ -12,6 +12,7 @@ import { existsSync } from "node:fs";
 import { readFile, writeFile } from "node:fs/promises";
 import path from "node:path";
 import { ComfyClient, ComfyError, sleep } from "../src/lib/comfyClient";
+import { getComfyEndpoint } from "../src/lib/comfyEndpoint";
 import { validatePrompt } from "../src/lib/comfySchema";
 import { finishAssets, parseFinishSettings } from "../src/lib/finisher";
 import { planFaceLock } from "../src/lib/jobPlanner";
@@ -33,7 +34,9 @@ const PROGRESS_WRITE_MS = 750;
 const CANCEL_POLL_MS = 1500;
 const VRAM_SAMPLE_MS = 2000;
 
-const client = new ComfyClient(process.env["COMFY_URL"]);
+// Which ComfyUI we talk to is chosen in the studio header (local laptop GPU or remote cloud GPU) and re-read every loop.
+let client = new ComfyClient(process.env["COMFY_URL"]);
+let remoteGpu = false;
 let stopping = false;
 let loaded: { engine: string; model: string } | null = null;
 
@@ -56,12 +59,33 @@ async function heartbeat(patch: { activeEngine?: string; activeModel?: string; c
 
 /** POST /free whenever the next job needs a different engine or model. */
 async function vramGuard(job: JobRow): Promise<void> {
-  if (loaded && (loaded.engine !== job.engineKind || loaded.model !== job.modelKey)) {
+  if (!loaded) return;
+  if (remoteGpu) {
+    // Cloud GPU (large VRAM): only flush when the model family changes, and skip the settle pause.
+    if (loaded.engine !== job.engineKind) {
+      log(`VRAM flush (remote): ${loaded.engine} -> ${job.engineKind}`);
+      await client.free(true, true);
+      await heartbeat({ flushed: true, activeEngine: "", activeModel: "" });
+    }
+    return;
+  }
+  if (loaded.engine !== job.engineKind || loaded.model !== job.modelKey) {
     log(`VRAM flush: ${loaded.engine}:${loaded.model} -> ${job.engineKind}:${job.modelKey}`);
     await client.free(true, true);
     await sleep(FLUSH_PAUSE_MS);
     await heartbeat({ flushed: true, activeEngine: "", activeModel: "" });
   }
+}
+
+/** Follow the studio's endpoint switch (local <-> remote). Whatever was loaded on the old GPU no longer counts. */
+async function syncEndpoint(): Promise<void> {
+  const endpoint = await getComfyEndpoint();
+  if (endpoint.url !== client.baseUrl) {
+    log(`ComfyUI endpoint: ${client.baseUrl} -> ${endpoint.url} (${endpoint.mode})`);
+    client = new ComfyClient(endpoint.url);
+    loaded = null;
+  }
+  remoteGpu = endpoint.remote;
 }
 
 async function uploadInputs(job: JobRow, params: JobParams): Promise<void> {
@@ -237,8 +261,9 @@ async function main(): Promise<void> {
   let comfyWasUp = true;
   while (!stopping) {
     await heartbeat();
+    await syncEndpoint();
     if (!(await client.isUp())) {
-      if (comfyWasUp) log("ComfyUI is not reachable - waiting (start it with scripts/start_comfy_api.ps1 -Background)");
+      if (comfyWasUp) log(remoteGpu ? `Remote ComfyUI at ${client.baseUrl} is not reachable - is the SSH tunnel running?` : "ComfyUI is not reachable - waiting (start it with scripts/start_comfy_api.ps1 -Background)");
       comfyWasUp = false;
       loaded = null;
       await sleep(COMFY_DOWN_POLL_MS);

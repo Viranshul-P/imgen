@@ -126,6 +126,12 @@ export const ASPECT_SIZES: Record<"A" | "B", Record<SceneKit["aspect"], { width:
   B: { "4:5": { width: 832, height: 1216 }, "9:16": { width: 768, height: 1344 } },
 };
 
+/** Render sizes on a remote cloud GPU: the 8 GB limits no longer apply, so renders start larger. */
+export const REMOTE_ASPECT_SIZES: Record<"A" | "B", Record<SceneKit["aspect"], { width: number; height: number }>> = {
+  A: { "4:5": { width: 1152, height: 1440 }, "9:16": { width: 1088, height: 1920 } },
+  B: { "4:5": { width: 1024, height: 1280 }, "9:16": { width: 896, height: 1600 } },
+};
+
 export const SOCIAL_SIZES: Record<SceneKit["aspect"], { width: number; height: number }> = {
   "4:5": { width: 1080, height: 1350 },
   "9:16": { width: 1080, height: 1920 },

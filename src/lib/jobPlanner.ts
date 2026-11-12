@@ -5,10 +5,12 @@
 import { randomInt } from "node:crypto";
 import { assertMinorSafe } from "./contentSafety";
 import { buildPrompt } from "./promptBuilder";
-import { ASPECT_SIZES, SOCIAL_SIZES, getSceneKit } from "./sceneKits";
+import { getComfyEndpoint } from "./comfyEndpoint";
+import { ASPECT_SIZES, REMOTE_ASPECT_SIZES, SOCIAL_SIZES, getSceneKit } from "./sceneKits";
 import {
   BadRequestError,
   DEFAULT_JOB_OPTIONS,
+  ENGINE_A_NATIVE_TEMPLATE,
   ENGINE_TEMPLATES,
   STRUCTURE_CLONE_TEMPLATE,
   type StructureMode,
@@ -174,7 +176,11 @@ export async function planShoot(req: ShootRequest, character: PlannerCharacter |
       if (v !== undefined && !(v >= lo && v <= hi)) throw new BadRequestError(`${label} must be between ${lo} and ${hi}`);
     }
   }
-  const template = await loadTemplate(clone ? STRUCTURE_CLONE_TEMPLATE : ENGINE_TEMPLATES[engineKey]);
+  // Remote Cloud GPU mode lifts the 8 GB limits: native FP16 Flux (any non-GGUF UNet) and larger renders.
+  const remote = (await getComfyEndpoint()).remote;
+  const nativeFlux = req.engine === "A" && Boolean(req.unet) && !/\.gguf$/i.test(req.unet ?? "");
+  if (nativeFlux && !remote) throw new BadRequestError("native FP16 Flux needs Remote Cloud GPU mode (switch the endpoint in the header); on the laptop use a .gguf UNet");
+  const template = await loadTemplate(clone ? STRUCTURE_CLONE_TEMPLATE : nativeFlux ? ENGINE_A_NATIVE_TEMPLATE : ENGINE_TEMPLATES[engineKey]);
   const count = req.candidateCount ?? 1;
   if (!Number.isInteger(count) || count < 1 || count > MAX_CANDIDATES) throw new BadRequestError(`candidateCount must be 1..${MAX_CANDIDATES}`);
   const raw = req.rawPrompt === true;
@@ -199,7 +205,7 @@ export async function planShoot(req: ShootRequest, character: PlannerCharacter |
   });
   assertMinorSafe(built.positive);
   const aspect = req.aspect ?? kit?.aspect ?? "4:5";
-  const size = ASPECT_SIZES[req.engine === "A" ? "A" : "B"][aspect];
+  const size = (remote ? REMOTE_ASPECT_SIZES : ASPECT_SIZES)[req.engine === "A" ? "A" : "B"][aspect];
   const social = SOCIAL_SIZES[aspect];
 
   const values: JobParams["values"] = {};
@@ -218,6 +224,7 @@ export async function planShoot(req: ShootRequest, character: PlannerCharacter |
   setIf(template, values, "SAMPLER", req.sampler);
   setIf(template, values, "SCHEDULER", req.scheduler);
   setIf(template, values, "UNET_NAME", req.unet);
+  if (nativeFlux && !(clone)) setIf(template, values, "UNET_WEIGHT_DTYPE", "default");
   setIf(template, values, "SDXL_CHECKPOINT_NAME", req.checkpoint ?? character?.sdxlCheckpoint ?? undefined);
   setIf(template, values, "POSE_STRENGTH", clone ? (clone.poseStrength ?? 0.65) : req.control?.strength);
   if (clone) {

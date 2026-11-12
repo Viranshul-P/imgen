@@ -7,6 +7,7 @@ import { readFile, writeFile } from "node:fs/promises";
 import path from "node:path";
 import { AUTO_MASK_CATEGORIES, AUTO_MASK_LABELS, type AutoMaskCategory } from "./autoMaskShared";
 import { ComfyClient } from "./comfyClient";
+import { getComfyClient } from "./comfyEndpoint";
 import { validatePrompt } from "./comfySchema";
 import { getObjectInfo } from "./modelDiscovery";
 import { ensureDataDirs, resolveDataPath, toDataRelative } from "./paths";
@@ -45,7 +46,8 @@ export interface AutoMaskResult {
   coverage: number;
 }
 
-export async function runAutoMask(req: AutoMaskRequest, client: ComfyClient = new ComfyClient()): Promise<AutoMaskResult> {
+export async function runAutoMask(req: AutoMaskRequest, givenClient?: ComfyClient): Promise<AutoMaskResult> {
+  const client = givenClient ?? (await getComfyClient());
   const categories = [...new Set(req.categories ?? [])];
   if (categories.length === 0) throw new BadRequestError("pick at least one garment to mask");
   for (const c of categories) {

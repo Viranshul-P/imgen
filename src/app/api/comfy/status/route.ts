@@ -1,4 +1,5 @@
 import { errorResponse, json } from "@/lib/api";
+import { getComfyEndpoint } from "@/lib/comfyEndpoint";
 import { ComfyClient } from "@/lib/comfyClient";
 import { prisma } from "@/lib/prisma";
 
@@ -9,7 +10,8 @@ const WORKER_STALE_MS = 10_000;
 /** GET /api/comfy/status - ComfyUI VRAM/RAM, worker liveness + active engine, queue counts. */
 export async function GET() {
   try {
-    const client = new ComfyClient();
+    const endpoint = await getComfyEndpoint();
+    const client = new ComfyClient(endpoint.url);
     const [stats, worker, grouped, running] = await Promise.all([
       client.systemStats().catch(() => null),
       prisma.workerState.findUnique({ where: { id: 1 } }),
@@ -22,6 +24,7 @@ export async function GET() {
     const counts = Object.fromEntries(grouped.map((g) => [g.status, g._count._all]));
     const device = stats?.devices[0];
     return json({
+      endpoint: { mode: endpoint.mode, url: endpoint.url, localUrl: endpoint.localUrl, remoteUrl: endpoint.remoteUrl },
       comfy: stats
         ? {
             up: true,

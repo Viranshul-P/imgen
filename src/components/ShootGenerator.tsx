@@ -156,6 +156,11 @@ export function ShootGenerator() {
                   {(catalog?.unets ?? []).map((u) => (
                     <option key={u}>{u}</option>
                   ))}
+                  {(catalog?.nativeUnets ?? []).map((u) => (
+                    <option key={u} value={u}>
+                      {u} (native FP16, cloud GPU mode only)
+                    </option>
+                  ))}
                 </Select>
               </Field>
             ) : (

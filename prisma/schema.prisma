@@ -150,4 +150,8 @@ model WorkerState {
   heartbeatAt   DateTime @default(now())
   lastFlushAt   DateTime?
   flushCount    Int      @default(0)
+  /// Which ComfyUI the studio and worker talk to: local (laptop GPU) or remote (cloud GPU tunnel).
+  endpointMode  String   @default("local")
+  /// URL used in remote mode ("" = COMFY_REMOTE_URL from .env.local, default http://127.0.0.1:8189).
+  remoteUrl     String   @default("")
 }

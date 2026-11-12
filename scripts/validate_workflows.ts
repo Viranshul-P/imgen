@@ -122,6 +122,7 @@ function resolveModelValues(t: WorkflowTemplate, info: ObjectInfo): { values: Re
 }
 
 function smokeLora(t: WorkflowTemplate, info: ObjectInfo): LoraSpec[] {
+  if (t.meta.loraAnchors.length === 0) return []; // e.g. auto_mask_clothes has no model to attach a LoRA to
   const loras = optionsFor(info, "LoraLoader", "lora_name");
   const name =
     t.meta.engine === "FLUX_GGUF"

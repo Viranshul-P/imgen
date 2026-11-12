@@ -1,11 +1,11 @@
 import { errorResponse, json } from "@/lib/api";
-import { ComfyClient } from "@/lib/comfyClient";
+import { getComfyClient } from "@/lib/comfyEndpoint";
 import { prisma } from "@/lib/prisma";
 
 /** POST /api/comfy/free - manual "Free VRAM" button (unload models + free cached memory). */
 export async function POST() {
   try {
-    await new ComfyClient().free(true, true);
+    await (await getComfyClient()).free(true, true);
     await prisma.workerState.upsert({
       where: { id: 1 },
       create: { id: 1, lastFlushAt: new Date(), flushCount: 1 },

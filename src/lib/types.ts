@@ -15,6 +15,8 @@ export const ENGINE_TEMPLATES = {
 } as const;
 /** v2.5 Reference Photo Structure Clone (SDXL; used instead of Engine B when a reference photo is supplied). */
 export const STRUCTURE_CLONE_TEMPLATE = "engine_ab_structure_clone";
+/** Engine A on a cloud GPU: native FP16 Flux instead of the 8 GB GGUF quantisation (Remote Cloud GPU mode only). */
+export const ENGINE_A_NATIVE_TEMPLATE = "engine_a_flux_native";
 export const STRUCTURE_MODES = ["hybrid", "newRoom"] as const;
 export type StructureMode = (typeof STRUCTURE_MODES)[number];
 export type StudioEngine = keyof typeof ENGINE_TEMPLATES;

@@ -4,54 +4,172 @@
     "engine": "SDXL",
     "description": "Engine C - pixel-locked sequential wardrobe inpainting. Crops the masked region, samples it at native SDXL resolution with Differential Diffusion, stitches it back, then composites through the feathered mask so every pixel outside the mask is identical to the base stage image.",
     "placeholders": {
-      "BASE_STAGE_IMAGE": { "type": "string", "default": "", "modelCategory": "input_image" },
-      "USER_MASK_IMAGE": { "type": "string", "default": "", "modelCategory": "input_image" },
-      "MASK_CHANNEL": { "type": "string", "default": "red" },
-      "MASK_GROW": { "type": "int", "default": 12 },
-      "MASK_BLUR_KERNEL": { "type": "int", "default": 10 },
-      "MASK_BLUR_SIGMA": { "type": "float", "default": 10.0 },
-      "CROP_TARGET_WIDTH": { "type": "int", "default": 1024 },
-      "CROP_TARGET_HEIGHT": { "type": "int", "default": 1024 },
-      "SDXL_CHECKPOINT_NAME": { "type": "string", "default": "RealVisXL_V5.0_fp16.safetensors", "modelCategory": "checkpoints" },
-      "VAE_NAME": { "type": "string", "default": "sdxl_vae.safetensors", "modelCategory": "vae" },
-      "POSITIVE_PROMPT": { "type": "string", "default": "" },
-      "NEGATIVE_PROMPT": { "type": "string", "default": "" },
-      "SEED": { "type": "int", "default": 0 },
-      "STEPS": { "type": "int", "default": 28 },
-      "CFG": { "type": "float", "default": 5.0 },
-      "SAMPLER": { "type": "string", "default": "dpmpp_2m_sde" },
-      "SCHEDULER": { "type": "string", "default": "karras" },
-      "INPAINT_DENOISE": { "type": "float", "default": 0.75, "min": 0.55, "max": 0.92 },
-      "FILENAME_PREFIX": { "type": "string", "default": "personaforge/engine_c" }
+      "BASE_STAGE_IMAGE": {
+        "type": "string",
+        "default": "",
+        "modelCategory": "input_image"
+      },
+      "USER_MASK_IMAGE": {
+        "type": "string",
+        "default": "",
+        "modelCategory": "input_image"
+      },
+      "MASK_CHANNEL": {
+        "type": "string",
+        "default": "red"
+      },
+      "MASK_GROW": {
+        "type": "int",
+        "default": 12
+      },
+      "MASK_BLUR_KERNEL": {
+        "type": "int",
+        "default": 10
+      },
+      "MASK_BLUR_SIGMA": {
+        "type": "float",
+        "default": 10.0
+      },
+      "CROP_TARGET_WIDTH": {
+        "type": "int",
+        "default": 1024
+      },
+      "CROP_TARGET_HEIGHT": {
+        "type": "int",
+        "default": 1024
+      },
+      "SDXL_CHECKPOINT_NAME": {
+        "type": "string",
+        "default": "RealVisXL_V5.0_fp16.safetensors",
+        "modelCategory": "checkpoints"
+      },
+      "VAE_NAME": {
+        "type": "string",
+        "default": "sdxl_vae.safetensors",
+        "modelCategory": "vae"
+      },
+      "POSITIVE_PROMPT": {
+        "type": "string",
+        "default": ""
+      },
+      "NEGATIVE_PROMPT": {
+        "type": "string",
+        "default": ""
+      },
+      "SEED": {
+        "type": "int",
+        "default": 0
+      },
+      "STEPS": {
+        "type": "int",
+        "default": 28
+      },
+      "CFG": {
+        "type": "float",
+        "default": 5.0
+      },
+      "SAMPLER": {
+        "type": "string",
+        "default": "dpmpp_2m_sde"
+      },
+      "SCHEDULER": {
+        "type": "string",
+        "default": "karras"
+      },
+      "INPAINT_DENOISE": {
+        "type": "float",
+        "default": 0.88,
+        "min": 0.55,
+        "max": 0.92
+      },
+      "FILENAME_PREFIX": {
+        "type": "string",
+        "default": "personaforge/engine_c"
+      },
+      "FILL_COLOR": {
+        "type": "int",
+        "default": 10096520,
+        "min": 0,
+        "max": 16777215
+      },
+      "FILL_NOISE": {
+        "type": "float",
+        "default": 0.1,
+        "min": 0,
+        "max": 0.5
+      }
     },
-    "features": {},
-    "loraAnchors": [{ "node": "10", "mode": "model_clip" }]
+    "features": {
+      "neutralFill": {
+        "default": true,
+        "description": "Replace the masked area with a neutral skin/ambient tone plus fine noise before inpainting, so changing or removing a dark garment leaves no ghost colour"
+      }
+    },
+    "loraAnchors": [
+      {
+        "node": "10",
+        "mode": "model_clip"
+      }
+    ]
   },
   "1": {
     "class_type": "LoadImage",
-    "inputs": { "image": "{{BASE_STAGE_IMAGE}}" },
-    "_meta": { "title": "Base stage image" }
+    "inputs": {
+      "image": "{{BASE_STAGE_IMAGE}}"
+    },
+    "_meta": {
+      "title": "Base stage image"
+    }
   },
   "2": {
     "class_type": "LoadImageMask",
-    "inputs": { "image": "{{USER_MASK_IMAGE}}", "channel": "{{MASK_CHANNEL}}" },
-    "_meta": { "title": "User wardrobe mask (white = repaint)" }
+    "inputs": {
+      "image": "{{USER_MASK_IMAGE}}",
+      "channel": "{{MASK_CHANNEL}}"
+    },
+    "_meta": {
+      "title": "User wardrobe mask (white = repaint)"
+    }
   },
   "3": {
     "class_type": "GrowMask",
-    "inputs": { "mask": ["2", 0], "expand": "{{MASK_GROW}}", "tapered_corners": true },
-    "_meta": { "title": "Grow mask" }
+    "inputs": {
+      "mask": [
+        "2",
+        0
+      ],
+      "expand": "{{MASK_GROW}}",
+      "tapered_corners": true
+    },
+    "_meta": {
+      "title": "Grow mask"
+    }
   },
   "4": {
     "class_type": "ImpactGaussianBlurMask",
-    "inputs": { "mask": ["3", 0], "kernel_size": "{{MASK_BLUR_KERNEL}}", "sigma": "{{MASK_BLUR_SIGMA}}" },
-    "_meta": { "title": "Feather mask" }
+    "inputs": {
+      "mask": [
+        "3",
+        0
+      ],
+      "kernel_size": "{{MASK_BLUR_KERNEL}}",
+      "sigma": "{{MASK_BLUR_SIGMA}}"
+    },
+    "_meta": {
+      "title": "Feather mask"
+    }
   },
   "5": {
     "class_type": "InpaintCropImproved",
     "inputs": {
-      "image": ["1", 0],
-      "mask": ["4", 0],
+      "image": [
+        "33",
+        0
+      ],
+      "mask": [
+        "4",
+        0
+      ],
       "downscale_algorithm": "bilinear",
       "upscale_algorithm": "bicubic",
       "preresize": false,
@@ -77,72 +195,274 @@
       "output_padding": "32",
       "device_mode": "gpu (much faster)"
     },
-    "_meta": { "title": "Crop masked region to native SDXL size" }
+    "_meta": {
+      "title": "Crop masked region to native SDXL size"
+    }
   },
   "10": {
     "class_type": "CheckpointLoaderSimple",
-    "inputs": { "ckpt_name": "{{SDXL_CHECKPOINT_NAME}}" },
-    "_meta": { "title": "SDXL checkpoint (LoRA anchor)" }
+    "inputs": {
+      "ckpt_name": "{{SDXL_CHECKPOINT_NAME}}"
+    },
+    "_meta": {
+      "title": "SDXL checkpoint (LoRA anchor)"
+    }
   },
   "11": {
     "class_type": "VAELoader",
-    "inputs": { "vae_name": "{{VAE_NAME}}" },
-    "_meta": { "title": "SDXL fp16-fix VAE" }
+    "inputs": {
+      "vae_name": "{{VAE_NAME}}"
+    },
+    "_meta": {
+      "title": "SDXL fp16-fix VAE"
+    }
   },
   "12": {
     "class_type": "CLIPTextEncode",
-    "inputs": { "text": "{{POSITIVE_PROMPT}}", "clip": ["10", 1] },
-    "_meta": { "title": "Stage prompt" }
+    "inputs": {
+      "text": "{{POSITIVE_PROMPT}}",
+      "clip": [
+        "10",
+        1
+      ]
+    },
+    "_meta": {
+      "title": "Stage prompt"
+    }
   },
   "13": {
     "class_type": "CLIPTextEncode",
-    "inputs": { "text": "{{NEGATIVE_PROMPT}}", "clip": ["10", 1] },
-    "_meta": { "title": "Negative" }
+    "inputs": {
+      "text": "{{NEGATIVE_PROMPT}}",
+      "clip": [
+        "10",
+        1
+      ]
+    },
+    "_meta": {
+      "title": "Negative"
+    }
   },
   "14": {
     "class_type": "InpaintModelConditioning",
-    "inputs": { "positive": ["12", 0], "negative": ["13", 0], "vae": ["11", 0], "pixels": ["5", 1], "mask": ["5", 2], "noise_mask": true },
-    "_meta": { "title": "Inpaint conditioning" }
+    "inputs": {
+      "positive": [
+        "12",
+        0
+      ],
+      "negative": [
+        "13",
+        0
+      ],
+      "vae": [
+        "11",
+        0
+      ],
+      "pixels": [
+        "5",
+        1
+      ],
+      "mask": [
+        "5",
+        2
+      ],
+      "noise_mask": true
+    },
+    "_meta": {
+      "title": "Inpaint conditioning"
+    }
   },
   "15": {
     "class_type": "DifferentialDiffusion",
-    "inputs": { "model": ["10", 0], "strength": 1.0 },
-    "_meta": { "title": "Differential Diffusion (soft mask edges)" }
+    "inputs": {
+      "model": [
+        "10",
+        0
+      ],
+      "strength": 1.0
+    },
+    "_meta": {
+      "title": "Differential Diffusion (soft mask edges)"
+    }
   },
   "16": {
     "class_type": "KSampler",
     "inputs": {
-      "model": ["15", 0],
+      "model": [
+        "15",
+        0
+      ],
       "seed": "{{SEED}}",
       "steps": "{{STEPS}}",
       "cfg": "{{CFG}}",
       "sampler_name": "{{SAMPLER}}",
       "scheduler": "{{SCHEDULER}}",
-      "positive": ["14", 0],
-      "negative": ["14", 1],
-      "latent_image": ["14", 2],
+      "positive": [
+        "14",
+        0
+      ],
+      "negative": [
+        "14",
+        1
+      ],
+      "latent_image": [
+        "14",
+        2
+      ],
       "denoise": "{{INPAINT_DENOISE}}"
     },
-    "_meta": { "title": "Inpaint sample" }
+    "_meta": {
+      "title": "Inpaint sample"
+    }
   },
   "17": {
     "class_type": "VAEDecode",
-    "inputs": { "samples": ["16", 0], "vae": ["11", 0] },
-    "_meta": { "title": "Decode crop" }
+    "inputs": {
+      "samples": [
+        "16",
+        0
+      ],
+      "vae": [
+        "11",
+        0
+      ]
+    },
+    "_meta": {
+      "title": "Decode crop"
+    }
   },
   "18": {
     "class_type": "InpaintStitchImproved",
-    "inputs": { "stitcher": ["5", 0], "inpainted_image": ["17", 0] },
-    "_meta": { "title": "Stitch crop back" }
+    "inputs": {
+      "stitcher": [
+        "5",
+        0
+      ],
+      "inpainted_image": [
+        "17",
+        0
+      ]
+    },
+    "_meta": {
+      "title": "Stitch crop back"
+    }
   },
   "19": {
     "class_type": "ImageCompositeMasked",
-    "inputs": { "destination": ["1", 0], "source": ["18", 0], "x": 0, "y": 0, "resize_source": false, "mask": ["4", 0] },
-    "_meta": { "title": "Pixel lock: original outside feathered mask" }
+    "inputs": {
+      "destination": [
+        "1",
+        0
+      ],
+      "source": [
+        "18",
+        0
+      ],
+      "x": 0,
+      "y": 0,
+      "resize_source": false,
+      "mask": [
+        "4",
+        0
+      ]
+    },
+    "_meta": {
+      "title": "Pixel lock: original outside feathered mask"
+    }
   },
   "20": {
     "class_type": "SaveImage",
-    "inputs": { "images": ["19", 0], "filename_prefix": "{{FILENAME_PREFIX}}" },
-    "_meta": { "title": "Save stage" }
+    "inputs": {
+      "images": [
+        "19",
+        0
+      ],
+      "filename_prefix": "{{FILENAME_PREFIX}}"
+    },
+    "_meta": {
+      "title": "Save stage"
+    }
+  },
+  "30": {
+    "class_type": "GetImageSize",
+    "inputs": {
+      "image": [
+        "1",
+        0
+      ]
+    },
+    "_meta": {
+      "title": "Base frame size",
+      "pf": {
+        "optional": "neutralFill"
+      }
+    }
+  },
+  "31": {
+    "class_type": "EmptyImage",
+    "inputs": {
+      "width": [
+        "30",
+        0
+      ],
+      "height": [
+        "30",
+        1
+      ],
+      "batch_size": 1,
+      "color": "{{FILL_COLOR}}"
+    },
+    "_meta": {
+      "title": "Neutral skin/ambient tone",
+      "pf": {
+        "optional": "neutralFill"
+      }
+    }
+  },
+  "32": {
+    "class_type": "ImageAddNoise",
+    "inputs": {
+      "image": [
+        "31",
+        0
+      ],
+      "seed": "{{SEED}}",
+      "strength": "{{FILL_NOISE}}"
+    },
+    "_meta": {
+      "title": "Fine noise so the fill is not flat",
+      "pf": {
+        "optional": "neutralFill"
+      }
+    }
+  },
+  "33": {
+    "class_type": "ImageCompositeMasked",
+    "inputs": {
+      "destination": [
+        "1",
+        0
+      ],
+      "source": [
+        "32",
+        0
+      ],
+      "x": 0,
+      "y": 0,
+      "resize_source": false,
+      "mask": [
+        "2",
+        0
+      ]
+    },
+    "_meta": {
+      "title": "Wipe the old garment colour on the garment pixels only (outside the mask is untouched)",
+      "pf": {
+        "optional": "neutralFill",
+        "bypass": {
+          "0": "destination"
+        }
+      }
+    }
   }
 }

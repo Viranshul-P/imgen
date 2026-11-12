@@ -53,7 +53,7 @@ export function ShootGenerator() {
   const [useFaceRef, setUseFaceRef] = React.useState(false);
   const [base, setBase] = React.useState<PickedAsset | null>(null);
   const [mask, setMask] = React.useState<{ id: string; path: string } | null>(null);
-  const [denoise, setDenoise] = React.useState(0.75);
+  const [denoise, setDenoise] = React.useState(0.88);
   const [campaignId, setCampaignId] = React.useState("");
   const [submitting, setSubmitting] = React.useState(false);
   const controlInput = React.useRef<HTMLInputElement>(null);
@@ -354,7 +354,7 @@ export function ShootGenerator() {
                 characterId={characterId || undefined}
                 label="Stage base frame"
               />
-              {base ? <WardrobeMaskCanvas imageUrl={fileUrl(base.path)} onExported={setMask} characterId={characterId || undefined} /> : null}
+              {base ? <WardrobeMaskCanvas imageUrl={fileUrl(base.path)} imagePath={base.path} onExported={setMask} characterId={characterId || undefined} /> : null}
               <Field label={`Inpaint denoise (${denoise.toFixed(2)})`}>
                 <Slider value={denoise} min={0.55} max={0.92} step={0.01} onChange={setDenoise} />
               </Field>

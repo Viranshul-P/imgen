@@ -26,7 +26,7 @@ const MAX_STAGES = 10;
 function initialStages(mode: "inpaint" | "pose"): StageDraft[] {
   // Inpaint mode: Stage 1 is the base frame itself, so generated stages start at 2.
   const first = mode === "inpaint" ? 2 : 1;
-  return Array.from({ length: MIN_STAGES - (mode === "inpaint" ? 1 : 0) }, (_, i) => ({ stage: first + i, prompt: "", denoise: 0.75 }));
+  return Array.from({ length: MIN_STAGES - (mode === "inpaint" ? 1 : 0) }, (_, i) => ({ stage: first + i, prompt: "", denoise: 0.88 }));
 }
 
 export function ArcProgressionBuilder() {
@@ -178,7 +178,7 @@ export function ArcProgressionBuilder() {
                 characterId={characterId}
                 label="Stage 1 base photo (mirror selfie, bed selfie, ...)"
               />
-              {base ? <WardrobeMaskCanvas imageUrl={fileUrl(base.path)} onExported={setMask} characterId={characterId} /> : null}
+              {base ? <WardrobeMaskCanvas imageUrl={fileUrl(base.path)} imagePath={base.path} onExported={setMask} characterId={characterId} /> : null}
               {mask ? <Badge variant="success">outfit mask ready</Badge> : <Badge variant="warning">paint the outfit region and click &ldquo;Use this mask&rdquo;</Badge>}
             </div>
           ) : (
@@ -226,7 +226,7 @@ export function ArcProgressionBuilder() {
               size="sm"
               variant="outline"
               disabled={lastStage >= MAX_STAGES}
-              onClick={() => setStages((st) => [...st, { stage: lastStage + 1, prompt: "", denoise: 0.75 }])}
+              onClick={() => setStages((st) => [...st, { stage: lastStage + 1, prompt: "", denoise: 0.88 }])}
             >
               <Plus /> Add stage
             </Button>

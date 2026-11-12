@@ -2,7 +2,7 @@
  * Tiny dependency-free PNG encoder (8-bit RGB / grayscale, no interlace). Used to synthesize
  * smoke-test inputs and to write binary wardrobe masks server-side.
  */
-import { deflateSync } from "node:zlib";
+import { deflateSync, inflateSync } from "node:zlib";
 
 const CRC_TABLE = (() => {
   const table = new Uint32Array(256);
@@ -71,4 +71,65 @@ export function encodePngRgb(width: number, height: number, pixel: PixelFn): Uin
     offset += p.length;
   }
   return png;
+}
+
+/**
+ * Fraction (0..1) of pixels whose first channel is above 127 in an 8-bit, non-interlaced
+ * gray / RGB / RGBA PNG. Used to tell the user how much of the frame an auto-mask covers.
+ */
+export function maskCoverage(bytes: Uint8Array): number {
+  const view = new DataView(bytes.buffer, bytes.byteOffset, bytes.byteLength);
+  let width = 0;
+  let height = 0;
+  let channels = 0;
+  const parts: Uint8Array[] = [];
+  for (let pos = 8; pos + 8 <= bytes.length; ) {
+    const length = view.getUint32(pos);
+    const type = String.fromCharCode(...bytes.subarray(pos + 4, pos + 8));
+    const data = bytes.subarray(pos + 8, pos + 8 + length);
+    if (type === "IHDR") {
+      width = view.getUint32(pos + 8);
+      height = view.getUint32(pos + 12);
+      const depth = data[8];
+      const colorType = data[9];
+      const interlace = data[12];
+      channels = colorType === 0 ? 1 : colorType === 2 ? 3 : colorType === 6 ? 4 : 0;
+      if (depth !== 8 || interlace !== 0 || channels === 0) throw new Error("unsupported PNG layout for mask coverage");
+    } else if (type === "IDAT") {
+      parts.push(data);
+    }
+    pos += 12 + length;
+  }
+  if (!width || !height || parts.length === 0) throw new Error("not a PNG");
+  const raw = inflateSync(Buffer.concat(parts));
+  const stride = width * channels;
+  let prev = new Uint8Array(stride);
+  let cur = new Uint8Array(stride);
+  let on = 0;
+  for (let y = 0; y < height; y++) {
+    const rowStart = y * (stride + 1);
+    const filter = raw[rowStart] as number;
+    for (let i = 0; i < stride; i++) {
+      const x = raw[rowStart + 1 + i] as number;
+      const a = i >= channels ? (cur[i - channels] as number) : 0;
+      const b = prev[i] as number;
+      const c = i >= channels ? (prev[i - channels] as number) : 0;
+      let v: number;
+      if (filter === 0) v = x;
+      else if (filter === 1) v = x + a;
+      else if (filter === 2) v = x + b;
+      else if (filter === 3) v = x + ((a + b) >> 1);
+      else {
+        const p = a + b - c;
+        const pa = Math.abs(p - a);
+        const pb = Math.abs(p - b);
+        const pc = Math.abs(p - c);
+        v = x + (pa <= pb && pa <= pc ? a : pb <= pc ? b : c);
+      }
+      cur[i] = v & 255;
+    }
+    for (let px = 0; px < width; px++) if ((cur[px * channels] as number) > 127) on++;
+    [prev, cur] = [cur, prev];
+  }
+  return on / (width * height);
 }

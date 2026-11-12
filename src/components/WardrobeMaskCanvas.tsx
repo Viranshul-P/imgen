@@ -1,10 +1,12 @@
 "use client";
 
-import { Brush, Download, Eraser, FlipHorizontal2, Redo2, Trash, Undo2 } from "lucide-react";
+import { Brush, Download, Eraser, FlipHorizontal2, Redo2, Sparkles, Trash, Undo2 } from "lucide-react";
 import * as React from "react";
 import { Button, Checkbox, Field, Slider } from "@/components/ui/primitives";
 import { cn } from "@/lib/utils";
-import { uploadFile, useStudio } from "./StudioContext";
+import { AUTO_MASK_LABELS, type AutoMaskCategory } from "@/lib/autoMaskShared";
+import { fileUrl } from "@/lib/utils";
+import { postJson, uploadFile, useStudio } from "./StudioContext";
 
 const PAINT = "rgb(255, 40, 90)";
 const HISTORY_LIMIT = 40;
@@ -14,11 +16,13 @@ export interface WardrobeMaskCanvasProps {
   imageUrl: string;
   /** Called with the uploaded binary mask (white = repaint, black = keep pixel-identical). */
   onExported: (mask: { id: string; path: string }) => void;
+  /** DATA_DIR-relative path of the same image; enables the 1-click auto-mask toolbar. */
+  imagePath?: string;
   characterId?: string;
   className?: string;
 }
 
-export function WardrobeMaskCanvas({ imageUrl, onExported, characterId, className }: WardrobeMaskCanvasProps) {
+export function WardrobeMaskCanvas({ imageUrl, imagePath, onExported, characterId, className }: WardrobeMaskCanvasProps) {
   const { notify } = useStudio();
   const canvasRef = React.useRef<HTMLCanvasElement>(null);
   const drawing = React.useRef<{ x: number; y: number } | null>(null);
@@ -30,6 +34,8 @@ export function WardrobeMaskCanvas({ imageUrl, onExported, characterId, classNam
   const [feather, setFeather] = React.useState(true);
   const [history, setHistory] = React.useState({ undo: 0, redo: 0 });
   const [exporting, setExporting] = React.useState(false);
+  const [autoCats, setAutoCats] = React.useState<AutoMaskCategory[]>(["upper"]);
+  const [autoBusy, setAutoBusy] = React.useState(false);
 
   const ctx = (): CanvasRenderingContext2D | null => canvasRef.current?.getContext("2d", { willReadFrequently: true }) ?? null;
 
@@ -131,6 +137,49 @@ export function WardrobeMaskCanvas({ imageUrl, onExported, characterId, classNam
     c.clearRect(0, 0, size.w, size.h);
   };
 
+  /** Ask the server (SegFormer B2 clothes) for a mask of the ticked garments and paint it onto the canvas for fine-tuning. */
+  const autoMask = async (): Promise<void> => {
+    const c = ctx();
+    if (!c || !size || !imagePath) return;
+    setAutoBusy(true);
+    try {
+      const res = await postJson<{ path: string; coverage: number }>("/api/comfy/auto-mask", { imagePath, categories: autoCats, characterId });
+      if (res.coverage < 0.002) {
+        notify("error", "No matching clothing was found in this frame. Try other garments or paint by hand.");
+        return;
+      }
+      const maskImg = new Image();
+      await new Promise<void>((resolve, reject) => {
+        maskImg.onload = () => resolve();
+        maskImg.onerror = () => reject(new Error("could not load the generated mask"));
+        maskImg.src = fileUrl(res.path);
+      });
+      const tmp = document.createElement("canvas");
+      tmp.width = size.w;
+      tmp.height = size.h;
+      const t = tmp.getContext("2d", { willReadFrequently: true });
+      if (!t) return;
+      t.drawImage(maskImg, 0, 0, size.w, size.h);
+      const src = t.getImageData(0, 0, size.w, size.h);
+      snapshot();
+      const out = c.getImageData(0, 0, size.w, size.h);
+      for (let i = 0; i < src.data.length; i += 4) {
+        if ((src.data[i] ?? 0) > 127) {
+          out.data[i] = 255;
+          out.data[i + 1] = 40;
+          out.data[i + 2] = 90;
+          out.data[i + 3] = 255;
+        }
+      }
+      c.putImageData(out, 0, 0);
+      notify("ok", `Auto-mask covers ${Math.round(res.coverage * 100)}% of the frame. Adjust with the brush, then click "Use this mask".`);
+    } catch (err) {
+      notify("error", err instanceof Error ? err.message : String(err));
+    } finally {
+      setAutoBusy(false);
+    }
+  };
+
   const exportMask = async (): Promise<void> => {
     const c = ctx();
     if (!c || !size) return;
@@ -201,6 +250,22 @@ export function WardrobeMaskCanvas({ imageUrl, onExported, characterId, classNam
           <Download /> {exporting ? "Exporting..." : "Use this mask"}
         </Button>
       </div>
+      {imagePath ? (
+        <div className="flex flex-wrap items-center gap-3 rounded-md border border-border p-2">
+          <span className="text-xs font-medium text-muted-foreground">1-Click Auto-Mask Outfit</span>
+          {(Object.keys(AUTO_MASK_LABELS) as AutoMaskCategory[]).map((cat) => (
+            <Checkbox
+              key={cat}
+              checked={autoCats.includes(cat)}
+              onChange={(on) => setAutoCats((list) => (on ? [...list, cat] : list.filter((x) => x !== cat)))}
+              label={AUTO_MASK_LABELS[cat]}
+            />
+          ))}
+          <Button size="sm" variant="outline" onClick={() => void autoMask()} disabled={!size || autoBusy || autoCats.length === 0} title="Finds the ticked garments and paints them onto the mask">
+            <Sparkles /> {autoBusy ? "Finding clothes..." : "Auto-mask"}
+          </Button>
+        </div>
+      ) : null}
       <div className="relative w-full max-w-[640px] select-none overflow-hidden rounded-lg border border-border">
         {/* eslint-disable-next-line @next/next/no-img-element -- local data/ file served by our own API, sized to its natural resolution */}
         <img

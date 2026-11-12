@@ -1,0 +1,191 @@
+{
+  "_pf": {
+    "name": "auto_mask_clothes",
+    "engine": "SDXL",
+    "description": "1-click clothing mask (SegFormer B2 clothes, runs on CPU). The node's toggles are inverted: output = background + every category switched OFF. Subtracting the all-ON run (background only) leaves just the chosen garments.",
+    "placeholders": {
+      "AUTOMASK_IMAGE": {
+        "type": "string",
+        "default": "",
+        "modelCategory": "input_image"
+      },
+      "SEG_UPPER_CLOTHES": {
+        "type": "bool",
+        "default": true
+      },
+      "SEG_SKIRT": {
+        "type": "bool",
+        "default": true
+      },
+      "SEG_PANTS": {
+        "type": "bool",
+        "default": true
+      },
+      "SEG_DRESS": {
+        "type": "bool",
+        "default": true
+      },
+      "SEG_BELT": {
+        "type": "bool",
+        "default": true
+      },
+      "SEG_SCARF": {
+        "type": "bool",
+        "default": true
+      },
+      "MASK_GROW": {
+        "type": "int",
+        "default": 0
+      },
+      "FILENAME_PREFIX": {
+        "type": "string",
+        "default": "personaforge/automask"
+      }
+    },
+    "features": {},
+    "loraAnchors": []
+  },
+  "1": {
+    "class_type": "LoadImage",
+    "inputs": {
+      "image": "{{AUTOMASK_IMAGE}}"
+    },
+    "_meta": {
+      "title": "Frame to mask"
+    }
+  },
+  "2": {
+    "class_type": "segformer_b2_clothes",
+    "inputs": {
+      "image": [
+        "1",
+        0
+      ],
+      "Face": true,
+      "Hat": true,
+      "Hair": true,
+      "shoe": true,
+      "leg": true,
+      "arm": true,
+      "Bag": true,
+      "Upper_clothes": "{{SEG_UPPER_CLOTHES}}",
+      "Skirt": "{{SEG_SKIRT}}",
+      "Pants": "{{SEG_PANTS}}",
+      "Dress": "{{SEG_DRESS}}",
+      "Belt": "{{SEG_BELT}}",
+      "Scarf": "{{SEG_SCARF}}"
+    },
+    "_meta": {
+      "title": "Background + chosen garments"
+    }
+  },
+  "3": {
+    "class_type": "segformer_b2_clothes",
+    "inputs": {
+      "image": [
+        "1",
+        0
+      ],
+      "Face": true,
+      "Hat": true,
+      "Hair": true,
+      "shoe": true,
+      "leg": true,
+      "arm": true,
+      "Bag": true,
+      "Upper_clothes": true,
+      "Skirt": true,
+      "Pants": true,
+      "Dress": true,
+      "Belt": true,
+      "Scarf": true
+    },
+    "_meta": {
+      "title": "Background only"
+    }
+  },
+  "4": {
+    "class_type": "ImageToMask",
+    "inputs": {
+      "image": [
+        "2",
+        0
+      ],
+      "channel": "red"
+    },
+    "_meta": {
+      "title": "to mask"
+    }
+  },
+  "5": {
+    "class_type": "ImageToMask",
+    "inputs": {
+      "image": [
+        "3",
+        0
+      ],
+      "channel": "red"
+    },
+    "_meta": {
+      "title": "to mask"
+    }
+  },
+  "6": {
+    "class_type": "MaskComposite",
+    "inputs": {
+      "destination": [
+        "4",
+        0
+      ],
+      "source": [
+        "5",
+        0
+      ],
+      "x": 0,
+      "y": 0,
+      "operation": "subtract"
+    },
+    "_meta": {
+      "title": "Chosen garments only"
+    }
+  },
+  "7": {
+    "class_type": "GrowMask",
+    "inputs": {
+      "mask": [
+        "6",
+        0
+      ],
+      "expand": "{{MASK_GROW}}",
+      "tapered_corners": true
+    },
+    "_meta": {
+      "title": "Optional grow"
+    }
+  },
+  "8": {
+    "class_type": "MaskToImage",
+    "inputs": {
+      "mask": [
+        "7",
+        0
+      ]
+    },
+    "_meta": {
+      "title": "mask as image"
+    }
+  },
+  "9": {
+    "class_type": "SaveImage",
+    "inputs": {
+      "images": [
+        "8",
+        0
+      ],
+      "filename_prefix": "{{FILENAME_PREFIX}}"
+    },
+    "_meta": {
+      "title": "Save mask"
+    }
+  }
+}

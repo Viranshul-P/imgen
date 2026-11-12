@@ -16,6 +16,8 @@ export interface CharacterDTO {
   fluxLora: string | null;
   fluxLoraWeight: number;
   defaultLoras: string;
+  /** JSON text of custom multi-bucket sub-tokens, e.g. {"body":"vira_fullbody"}. */
+  subTokens: string;
   _count?: { jobs: number; assets: number; campaigns: number };
 }
 

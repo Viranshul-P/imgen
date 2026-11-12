@@ -3,6 +3,7 @@
 import { Check, Dna, Sparkles, Upload, UserPlus } from "lucide-react";
 import * as React from "react";
 import { Badge, Button, Card, CardContent, CardDescription, CardHeader, CardTitle, Field, Input, Select, Slider, Textarea } from "@/components/ui/primitives";
+import { BUCKET_LABELS, DATASET_BUCKETS, type DatasetBucket, type SubTokens, parseSubTokens } from "@/lib/buckets";
 import { cn, fileUrl } from "@/lib/utils";
 import { type CharacterDTO, api, postJson, uploadFile, useStudio } from "./StudioContext";
 
@@ -53,16 +54,36 @@ export function CharacterDNAEditor() {
   }, [characterId, finished, notify]);
   const visibleCandidates = candidates.filter((c) => c.characterId === characterId);
 
+  // Multi-bucket sub-tokens are edited as an object and sent as an object (the DTO carries them as JSON text).
+  const [subState, setSubState] = React.useState<{ key: string; tokens: SubTokens }>({ key: "", tokens: {} });
+  const subTokens: SubTokens = subState.key === formKey ? subState.tokens : creating || !character ? {} : parseSubTokens(character.subTokens);
+  const setSubToken = (bucket: DatasetBucket, value: string): void =>
+    setSubState({ key: formKey, tokens: { ...subTokens, [bucket]: value.toLowerCase().replace(/[^a-z0-9_]/g, "") } });
+
+  /** Only the fields this form edits: spreading the whole character would re-send JSON-text fields as strings. */
+  const payload = (): Record<string, unknown> => ({
+    name: draft.name,
+    triggerToken: draft.triggerToken,
+    descriptors: draft.descriptors,
+    negativePrompt: draft.negativePrompt,
+    sdxlCheckpoint: draft.sdxlCheckpoint,
+    sdxlLora: draft.sdxlLora,
+    sdxlLoraWeight: draft.sdxlLoraWeight,
+    fluxLora: draft.fluxLora,
+    fluxLoraWeight: draft.fluxLoraWeight,
+    subTokens,
+  });
+
   const save = async (): Promise<void> => {
     try {
       if (creating) {
-        const created = await postJson<CharacterDTO>("/api/characters", draft);
+        const created = await postJson<CharacterDTO>("/api/characters", payload());
         setCreating(false);
         await reloadCharacters();
         setCharacterId(created.id);
         notify("ok", `Created ${created.name}`);
       } else if (character) {
-        await postJson("/api/characters", { id: character.id, ...draft }, "PATCH");
+        await postJson("/api/characters", { id: character.id, ...payload() }, "PATCH");
         await reloadCharacters();
         notify("ok", "Character DNA saved");
       }
@@ -132,6 +153,18 @@ export function CharacterDNAEditor() {
             <Field label="Locked physical descriptors (eye colour, hair texture, natural beauty marks, proportions)">
               <Textarea value={draft.descriptors} onChange={(e) => set("descriptors", e.target.value)} placeholder="hazel eyes, wavy shoulder-length dark brown hair, small beauty mark under left eye, freckles across nose" />
             </Field>
+            <div className="flex flex-col gap-2 rounded-lg border border-border p-3">
+              <span className="text-xs font-medium text-muted-foreground">
+                Training sub-tokens (multi-bucket LoRA). Leave blank to use {draft.triggerToken || "<trigger>"}_face, _body, _chest and _lower.
+              </span>
+              <div className="grid gap-3 sm:grid-cols-2">
+                {DATASET_BUCKETS.map((b) => (
+                  <Field key={b} label={BUCKET_LABELS[b]}>
+                    <Input value={subTokens[b] ?? ""} onChange={(e) => setSubToken(b, e.target.value)} placeholder={`${draft.triggerToken || "trigger"}_${b}`} />
+                  </Field>
+                ))}
+              </div>
+            </div>
             <Field label="Character negative">
               <Input value={draft.negativePrompt} onChange={(e) => set("negativePrompt", e.target.value)} placeholder="tattoos, blonde hair" />
             </Field>

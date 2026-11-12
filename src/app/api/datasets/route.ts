@@ -1,5 +1,6 @@
 import type { NextRequest } from "next/server";
 import { errorResponse, json, readJson, requireString } from "@/lib/api";
+import { isBucket } from "@/lib/buckets";
 import { exportDataset } from "@/lib/datasetExport";
 import { DATASET_SIZE, planDatasetFrames } from "@/lib/jobPlanner";
 import { prisma } from "@/lib/prisma";
@@ -10,8 +11,9 @@ export const maxDuration = 300;
 
 type DatasetPost =
   | { action: "generate"; characterId: string; count?: number; seed?: number }
-  | { action: "review"; assetId: string; approved: boolean | null; caption?: string }
-  | { action: "export"; characterId: string; repeats?: number; classWord?: string };
+  | { action: "review"; assetId: string; approved?: boolean | null; caption?: string; bucket?: string | null }
+  | { action: "export"; characterId: string; repeats?: number; classWord?: string }
+  | { action: "cloudBundle"; characterId: string; repeats?: number; classWord?: string };
 
 /** GET /api/datasets?characterId= - dataset frames for curation. */
 export async function GET(request: NextRequest) {
@@ -45,7 +47,11 @@ export async function POST(request: NextRequest) {
     if (body.action === "review") {
       const asset = await prisma.asset.update({
         where: { id: requireString(body.assetId, "assetId") },
-        data: { approved: body.approved, ...(body.caption !== undefined ? { caption: body.caption.trim() } : {}) },
+        data: {
+          ...(body.approved !== undefined ? { approved: body.approved } : {}),
+          ...(body.caption !== undefined ? { caption: body.caption.trim() } : {}),
+          ...(body.bucket !== undefined ? { bucket: body.bucket === null ? null : isBucket(body.bucket) ? body.bucket : (() => { throw new BadRequestError("bucket must be face, body, chest or lower"); })() } : {}),
+        },
       });
       return json(asset);
     }
@@ -53,7 +59,11 @@ export async function POST(request: NextRequest) {
       const result = await exportDataset(requireString(body.characterId, "characterId"), body.repeats ?? 10, body.classWord ?? "woman");
       return json(result, 201);
     }
-    throw new BadRequestError("action must be generate, review or export");
+    if (body.action === "cloudBundle") {
+      const result = await exportDataset(requireString(body.characterId, "characterId"), body.repeats ?? 10, body.classWord ?? "woman", true);
+      return json(result, 201);
+    }
+    throw new BadRequestError("action must be generate, review, export or cloudBundle");
   } catch (err) {
     return errorResponse(err);
   }

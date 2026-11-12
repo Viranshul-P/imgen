@@ -31,6 +31,8 @@ model Character {
   fluxLoraWeight Float      @default(0.85)
   /// Extra default LoRAs: [{ name, strengthModel, strengthClip?, engine }]
   defaultLoras   String     @default("[]")
+  /// Multi-bucket training sub-tokens: { face?, body?, chest?, lower? } (blank = "<trigger>_<bucket>").
+  subTokens      String     @default("{}")
   createdAt      DateTime   @default(now())
   updatedAt      DateTime   @updatedAt
   campaigns      Campaign[]
@@ -113,6 +115,8 @@ model Asset {
   /// Dataset curation: null = undecided, true = approved, false = rejected.
   approved    Boolean?
   caption     String     @default("")
+  /// Multi-bucket training category: face | body | chest | lower (null = general, main trigger only).
+  bucket      String?
   /// Quality checklist flags, e.g. { "hands": true, "ai_sheen": false }
   flags       String     @default("{}")
   createdAt   DateTime   @default(now())

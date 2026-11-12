@@ -1,5 +1,6 @@
 import type { NextRequest } from "next/server";
 import { errorResponse, json, readJson, requireString } from "@/lib/api";
+import { validateSubTokens } from "@/lib/buckets";
 import { prisma } from "@/lib/prisma";
 import { BadRequestError } from "@/lib/types";
 import { LORA_STRENGTH_MAX, LORA_STRENGTH_MIN, type LoraSpec } from "@/lib/workflowInjector";
@@ -13,6 +14,7 @@ interface CharacterBody {
   name?: string;
   triggerToken?: string;
   descriptors?: string;
+  subTokens?: Record<string, string | null>;
   negativePrompt?: string;
   sdxlCheckpoint?: string | null;
   sdxlLora?: string | null;
@@ -32,6 +34,15 @@ function weight(value: number | undefined, field: string): number | undefined {
   return value;
 }
 
+/** Drops blank entries and rejects invalid or duplicate sub-tokens. */
+function cleanSubTokens(input: Record<string, string | null>): Record<string, string> {
+  const message = validateSubTokens(input);
+  if (message) throw new BadRequestError(message);
+  const out: Record<string, string> = {};
+  for (const [key, value] of Object.entries(input)) if (typeof value === "string" && value) out[key] = value;
+  return out;
+}
+
 async function fields(body: CharacterBody) {
   if (body.triggerToken !== undefined && !TRIGGER_RE.test(body.triggerToken)) {
     throw new BadRequestError("triggerToken must be 3-40 chars of a-z, 0-9 or _ (e.g. v1ra_person)");
@@ -49,6 +60,7 @@ async function fields(body: CharacterBody) {
     ...(body.name !== undefined ? { name: requireString(body.name, "name") } : {}),
     ...(body.triggerToken !== undefined ? { triggerToken: body.triggerToken } : {}),
     ...(body.descriptors !== undefined ? { descriptors: body.descriptors.trim() } : {}),
+    ...(body.subTokens !== undefined ? { subTokens: JSON.stringify(cleanSubTokens(body.subTokens)) } : {}),
     ...(body.negativePrompt !== undefined ? { negativePrompt: body.negativePrompt.trim() } : {}),
     ...(body.sdxlCheckpoint !== undefined ? { sdxlCheckpoint: body.sdxlCheckpoint || null } : {}),
     ...(body.sdxlLora !== undefined ? { sdxlLora: body.sdxlLora || null } : {}),

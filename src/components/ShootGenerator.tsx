@@ -5,7 +5,7 @@ import * as React from "react";
 import { Badge, Button, Card, CardContent, CardDescription, CardHeader, CardTitle, Checkbox, Field, Input, Select, Slider, Textarea } from "@/components/ui/primitives";
 import { detectSheenWords } from "@/lib/promptBuilder";
 import { SCENE_KITS, getSceneKit } from "@/lib/sceneKits";
-import { DEFAULT_JOB_OPTIONS, FINISHER_PRESETS, type JobOptions } from "@/lib/types";
+import { DEFAULT_JOB_OPTIONS, FINISHER_PRESETS, type JobOptions, type StructureMode } from "@/lib/types";
 import { fileUrl } from "@/lib/utils";
 import type { LoraSpec } from "@/lib/workflowInjector";
 import { AssetPicker, type PickedAsset } from "./AssetPicker";
@@ -57,6 +57,8 @@ export function ShootGenerator() {
   const [campaignId, setCampaignId] = React.useState("");
   const [submitting, setSubmitting] = React.useState(false);
   const controlInput = React.useRef<HTMLInputElement>(null);
+  const cloneInput = React.useRef<HTMLInputElement>(null);
+  const [clone, setClone] = React.useState<{ path: string; mode: StructureMode; depthStrength: number; poseStrength: number; denoise: number } | null>(null);
 
   const sheen = detectSheenWords(prompt);
   const allLoras = catalog?.loras ?? [];
@@ -105,7 +107,17 @@ export function ShootGenerator() {
         cfg: engine !== "A" ? cfg : undefined,
         guidance: engine === "A" ? guidance : undefined,
         options: { ...options, enableCrossEngineFaceLock: engine === "A" && options.enableCrossEngineFaceLock },
-        control: engine === "B" && control ? { imagePath: control.path, mode: control.mode, strength: control.strength } : undefined,
+        structureClone:
+          engine === "B" && clone
+            ? {
+                imagePath: clone.path,
+                mode: clone.mode,
+                depthStrength: clone.depthStrength,
+                poseStrength: clone.mode === "newRoom" ? clone.poseStrength : undefined,
+                denoise: clone.mode === "hybrid" ? clone.denoise : undefined,
+              }
+            : undefined,
+        control: engine === "B" && control && !clone ? { imagePath: control.path, mode: control.mode, strength: control.strength } : undefined,
         faceReferencePath: engine === "B" && useFaceRef && character?.masterFacePath ? character.masterFacePath : undefined,
         inpaint: engine === "C" && base && mask ? { baseImagePath: base.path, maskPath: mask.path, denoise } : undefined,
       });
@@ -203,6 +215,75 @@ export function ShootGenerator() {
           ) : null}
 
           {engine === "B" ? (
+            <div className="grid gap-3 rounded-lg border border-border p-3 sm:grid-cols-2">
+              <div className="flex flex-col gap-2">
+                <span className="text-xs font-medium text-muted-foreground">Clone Pose, Perspective &amp; Lighting (real reference photo)</span>
+                <div
+                  className="flex min-h-28 cursor-pointer items-center justify-center rounded-md border border-dashed border-border text-xs text-muted-foreground"
+                  onClick={() => cloneInput.current?.click()}
+                  onDragOver={(e) => e.preventDefault()}
+                  onDrop={(e) => {
+                    e.preventDefault();
+                    const f = e.dataTransfer.files[0];
+                    if (f) void uploadFile(f, "upload").then((s) => setClone((c) => ({ path: s.path, mode: c?.mode ?? "hybrid", depthStrength: c?.depthStrength ?? 0.48, poseStrength: c?.poseStrength ?? 0.65, denoise: c?.denoise ?? 0.77 })));
+                  }}
+                >
+                  {clone ? (
+                    // eslint-disable-next-line @next/next/no-img-element -- local upload preview
+                    <img src={fileUrl(clone.path)} alt="structure reference" className="max-h-40 rounded" />
+                  ) : (
+                    <span className="flex items-center gap-2">
+                      <Upload className="size-4" /> drop a real photo to copy its pose, camera angle and light
+                    </span>
+                  )}
+                </div>
+                <input
+                  ref={cloneInput}
+                  type="file"
+                  accept="image/*"
+                  className="hidden"
+                  onChange={(e) => {
+                    const f = e.target.files?.[0];
+                    if (f) void uploadFile(f, "upload").then((s) => setClone((c) => ({ path: s.path, mode: c?.mode ?? "hybrid", depthStrength: c?.depthStrength ?? 0.48, poseStrength: c?.poseStrength ?? 0.65, denoise: c?.denoise ?? 0.77 })));
+                  }}
+                />
+              </div>
+              <div className="flex flex-col gap-3">
+                <Field label="Structure mode">
+                  <Select
+                    value={clone?.mode ?? "hybrid"}
+                    disabled={!clone}
+                    onChange={(e) => {
+                      const mode = e.target.value as StructureMode;
+                      if (clone) setClone({ ...clone, mode, depthStrength: mode === "newRoom" ? 0.45 : 0.48 });
+                    }}
+                  >
+                    <option value="hybrid">Depth + Img2Img Hybrid (keeps the room light)</option>
+                    <option value="newRoom">Depth + OpenPose Only (100% new background)</option>
+                  </Select>
+                </Field>
+                <Field label={`Depth strength ${(clone?.depthStrength ?? 0.48).toFixed(2)}`}>
+                  <Slider value={clone?.depthStrength ?? 0.48} min={0.2} max={0.9} step={0.01} onChange={(v) => clone && setClone({ ...clone, depthStrength: v })} />
+                </Field>
+                {clone?.mode === "newRoom" ? (
+                  <Field label={`Pose strength ${clone.poseStrength.toFixed(2)}`}>
+                    <Slider value={clone.poseStrength} min={0.3} max={1} step={0.01} onChange={(v) => setClone({ ...clone, poseStrength: v })} />
+                  </Field>
+                ) : (
+                  <Field label={`Change amount (denoise) ${(clone?.denoise ?? 0.77).toFixed(2)}`}>
+                    <Slider value={clone?.denoise ?? 0.77} min={0.72} max={0.82} step={0.01} onChange={(v) => clone && setClone({ ...clone, denoise: v })} />
+                  </Field>
+                )}
+                {clone ? (
+                  <Button size="sm" variant="ghost" onClick={() => setClone(null)}>
+                    Remove structure reference
+                  </Button>
+                ) : null}
+              </div>
+            </div>
+          ) : null}
+
+          {engine === "B" && !clone ? (
             <div className="grid gap-3 rounded-lg border border-border p-3 sm:grid-cols-2">
               <div className="flex flex-col gap-2">
                 <span className="text-xs font-medium text-muted-foreground">OpenPose / Depth reference</span>
@@ -317,9 +398,16 @@ export function ShootGenerator() {
               hint="After the Flux render, flush VRAM and re-detail the face with the SDXL Character LoRA (denoise 0.35)"
             />
             <Checkbox
+              checked={options.enableDetailDaemon}
+              onChange={(v) => setOpt("enableDetailDaemon", v)}
+              label="Natural detail boost (Detail Daemon)"
+              disabled={engine === "C"}
+              hint="Keeps more real skin/hair/fabric texture while drawing; adds no render time"
+            />
+            <Checkbox
               checked={options.enableHiresFix}
               onChange={(v) => setOpt("enableHiresFix", v)}
-              label="High resolution pass (1.5x re-sample)"
+              label="Optional: high resolution pass (1.5x re-sample)"
               disabled={engine === "C"}
               hint="Enlarges 1.5x and lets the model redraw real skin/eye/hair detail before the face pass"
             />

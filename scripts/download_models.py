@@ -48,7 +48,7 @@ CATEGORY_ALIASES: dict[str, tuple[str, ...]] = {
 SCAN_CATEGORIES = (
     "checkpoints", "unet", "diffusion_models", "clip", "text_encoders", "vae", "loras",
     "controlnet", "ipadapter", "clip_vision", "insightface", "ultralytics", "upscale_models",
-    "sams",
+    "sams", "segformer_b2_clothes", "segformer_b3_fashion",
 )
 MODEL_EXTS = {".safetensors", ".gguf", ".ckpt", ".pt", ".pth", ".bin", ".onnx"}
 
@@ -82,8 +82,13 @@ def hf(repo: str, path: str) -> Source:
 CORE_MODELS: list[ModelSpec] = [
     # --- Engine A: Flux GGUF ---
     ModelSpec("flux1-dev-Q4_K_S.gguf", "unet", [hf("city96/FLUX.1-dev-gguf", "flux1-dev-Q4_K_S.gguf")], "flux"),
+    # v2.5: Q3_K_S (2.1 GB) is the default T5 so Flux fits in 16 GB of system RAM without paging.
+    ModelSpec("t5-v1_1-xxl-encoder-Q3_K_S.gguf", "text_encoders",
+              [hf("city96/t5-v1_1-xxl-encoder-gguf", "t5-v1_1-xxl-encoder-Q3_K_S.gguf")], "flux",
+              note="default Flux T5 (v2.5), ~2.1 GB"),
     ModelSpec("t5-v1_1-xxl-encoder-Q5_K_M.gguf", "text_encoders",
-              [hf("city96/t5-v1_1-xxl-encoder-gguf", "t5-v1_1-xxl-encoder-Q5_K_M.gguf")], "flux"),
+              [hf("city96/t5-v1_1-xxl-encoder-gguf", "t5-v1_1-xxl-encoder-Q5_K_M.gguf")], "flux",
+              note="higher-quality T5 for machines with more RAM"),
     ModelSpec("clip_l.safetensors", "text_encoders", [hf("comfyanonymous/flux_text_encoders", "clip_l.safetensors")], "flux"),
     ModelSpec("ae.safetensors", "vae", [
         hf("black-forest-labs/FLUX.1-schnell", "ae.safetensors"),
@@ -121,6 +126,18 @@ CORE_MODELS: list[ModelSpec] = [
     ], "realism"),
     ModelSpec("4x-UltraSharp.pth", "upscale_models", [hf("Kim2091/UltraSharp", "4x-UltraSharp.pth")], "upscale"),
     ModelSpec("RealESRGAN_x2.pth", "upscale_models", [hf("ai-forever/Real-ESRGAN", "RealESRGAN_x2.pth")], "upscale"),
+    # --- v2.5: automatic clothing segmentation (Comfyui_segformer_b2_clothes loads this folder at import) ---
+    ModelSpec("config.json", "segformer_b2_clothes", [hf("mattmdjaga/segformer_b2_clothes", "config.json")], "segformer"),
+    ModelSpec("preprocessor_config.json", "segformer_b2_clothes",
+              [hf("mattmdjaga/segformer_b2_clothes", "preprocessor_config.json")], "segformer"),
+    ModelSpec("model.safetensors", "segformer_b2_clothes",
+              [hf("mattmdjaga/segformer_b2_clothes", "model.safetensors")], "segformer"),
+    # The same pack also loads its fashion model at import time; ComfyUI skips the whole pack if this folder is missing.
+    ModelSpec("config.json", "segformer_b3_fashion", [hf("sayeed99/segformer-b3-fashion", "config.json")], "segformer"),
+    ModelSpec("preprocessor_config.json", "segformer_b3_fashion",
+              [hf("sayeed99/segformer-b3-fashion", "preprocessor_config.json")], "segformer"),
+    ModelSpec("model.safetensors", "segformer_b3_fashion",
+              [hf("sayeed99/segformer-b3-fashion", "model.safetensors")], "segformer"),
 ]
 
 

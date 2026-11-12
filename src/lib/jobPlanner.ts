@@ -10,6 +10,8 @@ import {
   BadRequestError,
   DEFAULT_JOB_OPTIONS,
   ENGINE_TEMPLATES,
+  STRUCTURE_CLONE_TEMPLATE,
+  type StructureMode,
   type JobOptions,
   type JobParams,
   type StudioEngine,
@@ -52,6 +54,12 @@ export interface ShootRequest {
   scheduler?: string;
   options?: Partial<JobOptions>;
   control?: { imagePath: string; mode: "pose" | "depth"; strength?: number; end?: number };
+  /**
+   * Reference Photo Structure Clone (Engine B only): copy a real photo's camera angle, posture and lighting.
+   * hybrid = depth ControlNet + the photo as the img2img base (keeps the room light and slouch);
+   * newRoom = empty latent guided by depth + OpenPose (same posture, brand-new room).
+   */
+  structureClone?: { imagePath: string; mode: StructureMode; depthStrength?: number; poseStrength?: number; denoise?: number };
   faceReferencePath?: string;
   inpaint?: { baseImagePath: string; maskPath: string; denoise?: number };
   stage?: number;
@@ -87,6 +95,7 @@ const FEATURE_FROM_OPTION: Record<string, keyof JobOptions> = {
   handDetailer: "enableHandDetailer",
   upscale: "enableUpscale",
   hiresFix: "enableHiresFix",
+  detailDaemon: "enableDetailDaemon",
 };
 
 /** Hi-res second pass target: 1.5x the base render, snapped to a multiple of 16. */
@@ -151,7 +160,21 @@ function baseSeed(seed: number | undefined): number {
 
 export async function planShoot(req: ShootRequest, character: PlannerCharacter | null): Promise<PlannedJob[]> {
   const engineKey: StudioEngine = req.engine;
-  const template = await loadTemplate(ENGINE_TEMPLATES[engineKey]);
+  const clone = req.structureClone;
+  if (clone) {
+    if (req.engine !== "B") throw new BadRequestError("Structure Clone runs on Engine B (SDXL)");
+    if (req.control) throw new BadRequestError("use either the pose/depth reference or the Structure Clone reference, not both");
+    if (!clone.imagePath) throw new BadRequestError("Structure Clone needs a reference photo");
+    if (clone.mode !== "hybrid" && clone.mode !== "newRoom") throw new BadRequestError("structure mode must be hybrid or newRoom");
+    for (const [label, v, lo, hi] of [
+      ["depth strength", clone.depthStrength, 0.1, 1],
+      ["pose strength", clone.poseStrength, 0.1, 1],
+      ["denoise", clone.denoise, 0.55, 0.92],
+    ] as const) {
+      if (v !== undefined && !(v >= lo && v <= hi)) throw new BadRequestError(`${label} must be between ${lo} and ${hi}`);
+    }
+  }
+  const template = await loadTemplate(clone ? STRUCTURE_CLONE_TEMPLATE : ENGINE_TEMPLATES[engineKey]);
   const count = req.candidateCount ?? 1;
   if (!Number.isInteger(count) || count < 1 || count > MAX_CANDIDATES) throw new BadRequestError(`candidateCount must be 1..${MAX_CANDIDATES}`);
   const raw = req.rawPrompt === true;
@@ -196,20 +219,33 @@ export async function planShoot(req: ShootRequest, character: PlannerCharacter |
   setIf(template, values, "SCHEDULER", req.scheduler);
   setIf(template, values, "UNET_NAME", req.unet);
   setIf(template, values, "SDXL_CHECKPOINT_NAME", req.checkpoint ?? character?.sdxlCheckpoint ?? undefined);
-  setIf(template, values, "POSE_STRENGTH", req.control?.strength);
+  setIf(template, values, "POSE_STRENGTH", clone ? (clone.poseStrength ?? 0.65) : req.control?.strength);
+  if (clone) {
+    setIf(template, values, "DEPTH_STRENGTH", clone.depthStrength ?? (clone.mode === "newRoom" ? 0.45 : 0.48));
+    if (clone.mode === "hybrid") setIf(template, values, "DENOISE", clone.denoise ?? 0.77);
+  }
   setIf(template, values, "CONTROL_END", req.control?.end);
   setIf(template, values, "INPAINT_DENOISE", req.inpaint?.denoise);
   setIf(template, values, "FILENAME_PREFIX", `personaforge/${template.meta.name}`);
 
   const inputs: Record<string, string> = {};
   if (req.control) inputs["CONTROL_IMAGE"] = req.control.imagePath;
+  if (clone) inputs["STRUCTURE_REFERENCE_IMAGE"] = clone.imagePath;
   if (req.faceReferencePath) inputs["FACE_REFERENCE_IMAGE"] = req.faceReferencePath;
   if (req.inpaint) {
     inputs["BASE_STAGE_IMAGE"] = req.inpaint.baseImagePath;
     inputs["USER_MASK_IMAGE"] = req.inpaint.maskPath;
   }
-  const features = featuresFor(template, options, { controlnet: Boolean(req.control), ipadapter: Boolean(req.faceReferencePath) });
-  const variants: Record<string, string> = req.control && template.meta.variants?.["controlMode"] ? { controlMode: req.control.mode } : {};
+  const features = featuresFor(template, options, {
+    controlnet: Boolean(req.control),
+    ipadapter: Boolean(req.faceReferencePath),
+    poseControl: clone?.mode === "newRoom",
+  });
+  const variants: Record<string, string> = clone
+    ? { structureMode: clone.mode }
+    : req.control && template.meta.variants?.["controlMode"]
+      ? { controlMode: req.control.mode }
+      : {};
   const loras = mergeLoras(raw || req.useCharacterLora === false ? [] : characterLoras(character, template.meta.engine), req.loras);
 
   const seed0 = baseSeed(req.seed);

@@ -61,7 +61,10 @@ $Repos = @(
   @{ name = 'ComfyUI-Impact-Subpack';        url = 'https://github.com/ltdrdata/ComfyUI-Impact-Subpack' },
   @{ name = 'comfyui_controlnet_aux';        url = 'https://github.com/Fannovel16/comfyui_controlnet_aux' },
   @{ name = 'ComfyUI-Inpaint-CropAndStitch'; url = 'https://github.com/lquesada/ComfyUI-Inpaint-CropAndStitch' },
-  @{ name = 'ComfyUI-ReActor';               url = 'https://github.com/Gourieff/ComfyUI-ReActor'; optional = $true }
+  @{ name = 'ComfyUI-ReActor';               url = 'https://github.com/Gourieff/ComfyUI-ReActor'; optional = $true },
+  # v2.5 upgrades
+  @{ name = 'ComfyUI-Detail-Daemon';         url = 'https://github.com/Jonseed/ComfyUI-Detail-Daemon' },
+  @{ name = 'Comfyui_segformer_b2_clothes';  url = 'https://github.com/StartHua/Comfyui_segformer_b2_clothes'; skipRequirements = $true }  # pins transformers==4.33.2, which would downgrade ComfyUI's transformers 5.x
 )
 
 # Prebuilt insightface wheels (insightface has no Windows wheels on PyPI).
@@ -175,6 +178,7 @@ foreach ($r in $Repos) {
   $dest = Join-Path $NodesDir $r.name
   $req = Join-Path $dest 'requirements.txt'
   if (-not (Test-Path $req)) { continue }
+  if ($r.ContainsKey('skipRequirements')) { Write-Host "   skipping pinned requirements.txt for $($r.name)" -ForegroundColor Yellow; continue }
   Invoke-Step "requirements.txt for $($r.name)" {
     # insightface is already satisfied from the wheel; let pip see it as installed.
     Invoke-Pip @('install', '-r', $req)

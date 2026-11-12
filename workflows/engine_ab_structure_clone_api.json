@@ -1,0 +1,1034 @@
+{
+  "_pf": {
+    "name": "engine_ab_structure_clone",
+    "engine": "SDXL",
+    "description": "Reference Photo Structure Clone (SDXL): copies the camera angle, body posture and room lighting of a real reference photo onto the fictional character. Hybrid mode = depth ControlNet + img2img from the photo; newRoom mode = depth + OpenPose into a brand-new room.",
+    "placeholders": {
+      "SDXL_CHECKPOINT_NAME": {
+        "type": "string",
+        "default": "RealVisXL_V5.0_fp16.safetensors",
+        "modelCategory": "checkpoints"
+      },
+      "VAE_NAME": {
+        "type": "string",
+        "default": "sdxl_vae.safetensors",
+        "modelCategory": "vae"
+      },
+      "POSITIVE_PROMPT": {
+        "type": "string",
+        "default": ""
+      },
+      "NEGATIVE_PROMPT": {
+        "type": "string",
+        "default": ""
+      },
+      "SEED": {
+        "type": "int",
+        "default": 0
+      },
+      "STEPS": {
+        "type": "int",
+        "default": 28
+      },
+      "CFG": {
+        "type": "float",
+        "default": 5.0,
+        "min": 4.5,
+        "max": 5.5
+      },
+      "SAMPLER": {
+        "type": "string",
+        "default": "dpmpp_2m_sde"
+      },
+      "SCHEDULER": {
+        "type": "string",
+        "default": "karras"
+      },
+      "WIDTH": {
+        "type": "int",
+        "default": 832
+      },
+      "HEIGHT": {
+        "type": "int",
+        "default": 1216
+      },
+      "CONTROL_RESOLUTION": {
+        "type": "int",
+        "default": 1024
+      },
+      "CONTROLNET_POSE_NAME": {
+        "type": "string",
+        "default": "controlnet-openpose-sdxl-1.0.safetensors",
+        "modelCategory": "controlnet"
+      },
+      "CONTROLNET_DEPTH_NAME": {
+        "type": "string",
+        "default": "controlnet-depth-sdxl-1.0.safetensors",
+        "modelCategory": "controlnet"
+      },
+      "POSE_STRENGTH": {
+        "type": "float",
+        "default": 0.65,
+        "min": 0.1,
+        "max": 1.0
+      },
+      "FACE_REFERENCE_IMAGE": {
+        "type": "string",
+        "default": "",
+        "modelCategory": "input_image"
+      },
+      "IPADAPTER_LORA_STRENGTH": {
+        "type": "float",
+        "default": 0.6
+      },
+      "IPADAPTER_WEIGHT": {
+        "type": "float",
+        "default": 0.85
+      },
+      "IPADAPTER_FACEIDV2_WEIGHT": {
+        "type": "float",
+        "default": 1.0
+      },
+      "DETAILER_STEPS": {
+        "type": "int",
+        "default": 20
+      },
+      "FACE_DENOISE": {
+        "type": "float",
+        "default": 0.3
+      },
+      "HAND_DENOISE": {
+        "type": "float",
+        "default": 0.35
+      },
+      "FACE_DETECTOR": {
+        "type": "string",
+        "default": "bbox/face_yolov8m.pt",
+        "modelCategory": "ultralytics"
+      },
+      "HAND_DETECTOR": {
+        "type": "string",
+        "default": "bbox/hand_yolov8n.pt",
+        "modelCategory": "ultralytics"
+      },
+      "UPSCALE_MODEL": {
+        "type": "string",
+        "default": "4x-UltraSharp.pth",
+        "modelCategory": "upscale_models"
+      },
+      "HIRES_WIDTH": {
+        "type": "int",
+        "default": 1248
+      },
+      "HIRES_HEIGHT": {
+        "type": "int",
+        "default": 1824
+      },
+      "HIRES_STEPS": {
+        "type": "int",
+        "default": 20
+      },
+      "HIRES_DENOISE": {
+        "type": "float",
+        "default": 0.35,
+        "min": 0.15,
+        "max": 0.6
+      },
+      "OUTPUT_WIDTH": {
+        "type": "int",
+        "default": 1080
+      },
+      "OUTPUT_HEIGHT": {
+        "type": "int",
+        "default": 1350
+      },
+      "FILENAME_PREFIX": {
+        "type": "string",
+        "default": "personaforge/engine_b"
+      },
+      "DETAIL_AMOUNT": {
+        "type": "float",
+        "default": 0.15,
+        "min": 0,
+        "max": 1
+      },
+      "STRUCTURE_REFERENCE_IMAGE": {
+        "type": "string",
+        "default": "",
+        "modelCategory": "input_image"
+      },
+      "DEPTH_STRENGTH": {
+        "type": "float",
+        "default": 0.48,
+        "min": 0.1,
+        "max": 1.0
+      },
+      "DEPTH_END": {
+        "type": "float",
+        "default": 0.6,
+        "min": 0.2,
+        "max": 1.0
+      },
+      "POSE_END": {
+        "type": "float",
+        "default": 0.8,
+        "min": 0.2,
+        "max": 1.0
+      },
+      "DENOISE": {
+        "type": "float",
+        "default": 0.77,
+        "min": 0.55,
+        "max": 0.92
+      }
+    },
+    "features": {
+      "ipadapter": {
+        "default": false,
+        "description": "IP-Adapter FaceID Plus v2 identity from FACE_REFERENCE_IMAGE"
+      },
+      "hiresFix": {
+        "default": false,
+        "description": "Hi-res second pass: 4x model upscale to 1.5x, then a low-denoise SDXL re-sample that redraws real detail at the larger size"
+      },
+      "faceDetailer": {
+        "default": true,
+        "description": "FaceDetailer (face_yolov8m)"
+      },
+      "handDetailer": {
+        "default": false,
+        "description": "Second detailer pass on hands (hand_yolov8n)"
+      },
+      "upscale": {
+        "default": false,
+        "description": "4x model upscale then lanczos downscale to the social target size"
+      },
+      "detailDaemon": {
+        "default": true,
+        "description": "ComfyUI-Detail-Daemon: lowers the noise the sampler removes mid-schedule so real skin, hair and fabric detail is kept, at no extra render time"
+      },
+      "poseControl": {
+        "default": false,
+        "description": "OpenPose skeleton ControlNet on top of depth (used by the 'new room' structure mode)"
+      }
+    },
+    "variants": {
+      "structureMode": {
+        "default": "hybrid",
+        "options": [
+          "hybrid",
+          "newRoom"
+        ]
+      }
+    },
+    "loraAnchors": [
+      {
+        "node": "1",
+        "mode": "model_clip"
+      }
+    ]
+  },
+  "1": {
+    "class_type": "CheckpointLoaderSimple",
+    "inputs": {
+      "ckpt_name": "{{SDXL_CHECKPOINT_NAME}}"
+    },
+    "_meta": {
+      "title": "SDXL checkpoint (LoRA anchor)"
+    }
+  },
+  "2": {
+    "class_type": "VAELoader",
+    "inputs": {
+      "vae_name": "{{VAE_NAME}}"
+    },
+    "_meta": {
+      "title": "SDXL fp16-fix VAE"
+    }
+  },
+  "3": {
+    "class_type": "CLIPTextEncode",
+    "inputs": {
+      "text": "{{POSITIVE_PROMPT}}",
+      "clip": [
+        "1",
+        1
+      ]
+    },
+    "_meta": {
+      "title": "Positive"
+    }
+  },
+  "4": {
+    "class_type": "CLIPTextEncode",
+    "inputs": {
+      "text": "{{NEGATIVE_PROMPT}}",
+      "clip": [
+        "1",
+        1
+      ]
+    },
+    "_meta": {
+      "title": "Negative"
+    }
+  },
+  "10": {
+    "class_type": "LoadImage",
+    "inputs": {
+      "image": "{{STRUCTURE_REFERENCE_IMAGE}}"
+    },
+    "_meta": {
+      "title": "Real reference photo"
+    }
+  },
+  "11": {
+    "class_type": "DepthAnythingV2Preprocessor",
+    "inputs": {
+      "image": [
+        "8",
+        0
+      ],
+      "ckpt_name": "depth_anything_v2_vitl.pth",
+      "resolution": "{{CONTROL_RESOLUTION}}"
+    },
+    "_meta": {
+      "title": "Depth map of the reference"
+    }
+  },
+  "12": {
+    "class_type": "ControlNetLoader",
+    "inputs": {
+      "control_net_name": "{{CONTROLNET_DEPTH_NAME}}"
+    },
+    "_meta": {
+      "title": "Depth ControlNet"
+    }
+  },
+  "13": {
+    "class_type": "ControlNetApplyAdvanced",
+    "inputs": {
+      "positive": [
+        "3",
+        0
+      ],
+      "negative": [
+        "4",
+        0
+      ],
+      "control_net": [
+        "12",
+        0
+      ],
+      "image": [
+        "11",
+        0
+      ],
+      "strength": "{{DEPTH_STRENGTH}}",
+      "start_percent": 0.0,
+      "end_percent": "{{DEPTH_END}}",
+      "vae": [
+        "2",
+        0
+      ]
+    },
+    "_meta": {
+      "title": "Apply depth (camera tilt, perspective, light falloff)"
+    }
+  },
+  "20": {
+    "class_type": "LoadImage",
+    "inputs": {
+      "image": "{{FACE_REFERENCE_IMAGE}}"
+    },
+    "_meta": {
+      "title": "Face reference (master_face)",
+      "pf": {
+        "optional": "ipadapter"
+      }
+    }
+  },
+  "21": {
+    "class_type": "IPAdapterUnifiedLoaderFaceID",
+    "inputs": {
+      "model": [
+        "1",
+        0
+      ],
+      "preset": "FACEID PLUS V2",
+      "lora_strength": "{{IPADAPTER_LORA_STRENGTH}}",
+      "provider": "CUDA"
+    },
+    "_meta": {
+      "title": "IP-Adapter FaceID Plus v2 loader",
+      "pf": {
+        "optional": "ipadapter",
+        "bypass": {
+          "0": "model"
+        }
+      }
+    }
+  },
+  "22": {
+    "class_type": "IPAdapterFaceID",
+    "inputs": {
+      "model": [
+        "21",
+        0
+      ],
+      "ipadapter": [
+        "21",
+        1
+      ],
+      "image": [
+        "20",
+        0
+      ],
+      "weight": "{{IPADAPTER_WEIGHT}}",
+      "weight_faceidv2": "{{IPADAPTER_FACEIDV2_WEIGHT}}",
+      "weight_type": "linear",
+      "combine_embeds": "concat",
+      "start_at": 0.0,
+      "end_at": 1.0,
+      "embeds_scaling": "V only"
+    },
+    "_meta": {
+      "title": "Apply FaceID",
+      "pf": {
+        "optional": "ipadapter",
+        "bypass": {
+          "0": "model"
+        }
+      }
+    }
+  },
+  "30": {
+    "class_type": "VAEEncode",
+    "inputs": {
+      "pixels": [
+        "8",
+        0
+      ],
+      "vae": [
+        "2",
+        0
+      ]
+    },
+    "_meta": {
+      "title": "Latent base (reference photo in hybrid mode, empty in newRoom mode)",
+      "pf": {
+        "variantKey": "structureMode",
+        "variants": {
+          "newRoom": {
+            "class_type": "EmptyLatentImage",
+            "inputs": {
+              "width": "{{WIDTH}}",
+              "height": "{{HEIGHT}}",
+              "batch_size": 1
+            }
+          }
+        }
+      }
+    }
+  },
+  "31": {
+    "class_type": "SamplerCustomAdvanced",
+    "inputs": {
+      "noise": [
+        "70",
+        0
+      ],
+      "guider": [
+        "73",
+        0
+      ],
+      "sampler": [
+        "74",
+        0
+      ],
+      "sigmas": [
+        "72",
+        0
+      ],
+      "latent_image": [
+        "30",
+        0
+      ]
+    },
+    "_meta": {
+      "title": "Sample (custom advanced, so Detail Daemon can wrap the sampler)"
+    }
+  },
+  "32": {
+    "class_type": "VAEDecode",
+    "inputs": {
+      "samples": [
+        "31",
+        0
+      ],
+      "vae": [
+        "2",
+        0
+      ]
+    },
+    "_meta": {
+      "title": "Decode"
+    }
+  },
+  "33": {
+    "class_type": "UpscaleModelLoader",
+    "inputs": {
+      "model_name": "{{UPSCALE_MODEL}}"
+    },
+    "_meta": {
+      "title": "Hi-res: upscale model",
+      "pf": {
+        "optional": "hiresFix"
+      }
+    }
+  },
+  "34": {
+    "class_type": "ImageUpscaleWithModel",
+    "inputs": {
+      "upscale_model": [
+        "33",
+        0
+      ],
+      "image": [
+        "32",
+        0
+      ]
+    },
+    "_meta": {
+      "title": "Hi-res: model upscale",
+      "pf": {
+        "optional": "hiresFix",
+        "bypass": {
+          "0": "image"
+        }
+      }
+    }
+  },
+  "35": {
+    "class_type": "ImageScale",
+    "inputs": {
+      "image": [
+        "34",
+        0
+      ],
+      "upscale_method": "lanczos",
+      "width": "{{HIRES_WIDTH}}",
+      "height": "{{HIRES_HEIGHT}}",
+      "crop": "disabled"
+    },
+    "_meta": {
+      "title": "Hi-res: scale to 1.5x",
+      "pf": {
+        "optional": "hiresFix",
+        "bypass": {
+          "0": "image"
+        }
+      }
+    }
+  },
+  "36": {
+    "class_type": "VAEEncode",
+    "inputs": {
+      "pixels": [
+        "35",
+        0
+      ],
+      "vae": [
+        "2",
+        0
+      ]
+    },
+    "_meta": {
+      "title": "Hi-res: encode",
+      "pf": {
+        "optional": "hiresFix"
+      }
+    }
+  },
+  "37": {
+    "class_type": "KSampler",
+    "inputs": {
+      "model": [
+        "22",
+        0
+      ],
+      "seed": "{{SEED}}",
+      "steps": "{{HIRES_STEPS}}",
+      "cfg": "{{CFG}}",
+      "sampler_name": "{{SAMPLER}}",
+      "scheduler": "{{SCHEDULER}}",
+      "positive": [
+        "16",
+        0
+      ],
+      "negative": [
+        "16",
+        1
+      ],
+      "latent_image": [
+        "36",
+        0
+      ],
+      "denoise": "{{HIRES_DENOISE}}"
+    },
+    "_meta": {
+      "title": "Hi-res: re-sample detail",
+      "pf": {
+        "optional": "hiresFix"
+      }
+    }
+  },
+  "38": {
+    "class_type": "VAEDecode",
+    "inputs": {
+      "samples": [
+        "37",
+        0
+      ],
+      "vae": [
+        "2",
+        0
+      ]
+    },
+    "_meta": {
+      "title": "Hi-res: decode",
+      "pf": {
+        "optional": "hiresFix"
+      }
+    }
+  },
+  "39": {
+    "class_type": "ImageCompositeMasked",
+    "inputs": {
+      "destination": [
+        "35",
+        0
+      ],
+      "source": [
+        "38",
+        0
+      ],
+      "x": 0,
+      "y": 0,
+      "resize_source": false
+    },
+    "_meta": {
+      "title": "Hi-res result (full-frame paste; bypasses to the base decode when hiresFix is off)",
+      "pf": {
+        "optional": "hiresFix",
+        "bypass": {
+          "0": "destination"
+        }
+      }
+    }
+  },
+  "40": {
+    "class_type": "UltralyticsDetectorProvider",
+    "inputs": {
+      "model_name": "{{FACE_DETECTOR}}"
+    },
+    "_meta": {
+      "title": "Face detector",
+      "pf": {
+        "optional": "faceDetailer"
+      }
+    }
+  },
+  "41": {
+    "class_type": "FaceDetailer",
+    "inputs": {
+      "image": [
+        "39",
+        0
+      ],
+      "model": [
+        "1",
+        0
+      ],
+      "clip": [
+        "1",
+        1
+      ],
+      "vae": [
+        "2",
+        0
+      ],
+      "guide_size": 512,
+      "guide_size_for": true,
+      "max_size": 1024,
+      "seed": "{{SEED}}",
+      "steps": "{{DETAILER_STEPS}}",
+      "cfg": "{{CFG}}",
+      "sampler_name": "{{SAMPLER}}",
+      "scheduler": "{{SCHEDULER}}",
+      "positive": [
+        "3",
+        0
+      ],
+      "negative": [
+        "4",
+        0
+      ],
+      "denoise": "{{FACE_DENOISE}}",
+      "feather": 5,
+      "noise_mask": true,
+      "force_inpaint": true,
+      "bbox_threshold": 0.5,
+      "bbox_dilation": 10,
+      "bbox_crop_factor": 3.0,
+      "sam_detection_hint": "center-1",
+      "sam_dilation": 0,
+      "sam_threshold": 0.93,
+      "sam_bbox_expansion": 0,
+      "sam_mask_hint_threshold": 0.7,
+      "sam_mask_hint_use_negative": "False",
+      "drop_size": 10,
+      "bbox_detector": [
+        "40",
+        0
+      ],
+      "wildcard": "",
+      "cycle": 1
+    },
+    "_meta": {
+      "title": "FaceDetailer",
+      "pf": {
+        "optional": "faceDetailer",
+        "bypass": {
+          "0": "image"
+        }
+      }
+    }
+  },
+  "42": {
+    "class_type": "UltralyticsDetectorProvider",
+    "inputs": {
+      "model_name": "{{HAND_DETECTOR}}"
+    },
+    "_meta": {
+      "title": "Hand detector",
+      "pf": {
+        "optional": "handDetailer"
+      }
+    }
+  },
+  "43": {
+    "class_type": "FaceDetailer",
+    "inputs": {
+      "image": [
+        "41",
+        0
+      ],
+      "model": [
+        "1",
+        0
+      ],
+      "clip": [
+        "1",
+        1
+      ],
+      "vae": [
+        "2",
+        0
+      ],
+      "guide_size": 512,
+      "guide_size_for": true,
+      "max_size": 1024,
+      "seed": "{{SEED}}",
+      "steps": "{{DETAILER_STEPS}}",
+      "cfg": "{{CFG}}",
+      "sampler_name": "{{SAMPLER}}",
+      "scheduler": "{{SCHEDULER}}",
+      "positive": [
+        "3",
+        0
+      ],
+      "negative": [
+        "4",
+        0
+      ],
+      "denoise": "{{HAND_DENOISE}}",
+      "feather": 5,
+      "noise_mask": true,
+      "force_inpaint": true,
+      "bbox_threshold": 0.5,
+      "bbox_dilation": 10,
+      "bbox_crop_factor": 3.0,
+      "sam_detection_hint": "center-1",
+      "sam_dilation": 0,
+      "sam_threshold": 0.93,
+      "sam_bbox_expansion": 0,
+      "sam_mask_hint_threshold": 0.7,
+      "sam_mask_hint_use_negative": "False",
+      "drop_size": 10,
+      "bbox_detector": [
+        "42",
+        0
+      ],
+      "wildcard": "",
+      "cycle": 1
+    },
+    "_meta": {
+      "title": "Hand detailer",
+      "pf": {
+        "optional": "handDetailer",
+        "bypass": {
+          "0": "image"
+        }
+      }
+    }
+  },
+  "50": {
+    "class_type": "UpscaleModelLoader",
+    "inputs": {
+      "model_name": "{{UPSCALE_MODEL}}"
+    },
+    "_meta": {
+      "title": "Upscale model",
+      "pf": {
+        "optional": "upscale"
+      }
+    }
+  },
+  "51": {
+    "class_type": "ImageUpscaleWithModel",
+    "inputs": {
+      "upscale_model": [
+        "50",
+        0
+      ],
+      "image": [
+        "43",
+        0
+      ]
+    },
+    "_meta": {
+      "title": "Model upscale",
+      "pf": {
+        "optional": "upscale",
+        "bypass": {
+          "0": "image"
+        }
+      }
+    }
+  },
+  "52": {
+    "class_type": "ImageScale",
+    "inputs": {
+      "image": [
+        "51",
+        0
+      ],
+      "upscale_method": "lanczos",
+      "width": "{{OUTPUT_WIDTH}}",
+      "height": "{{OUTPUT_HEIGHT}}",
+      "crop": "center"
+    },
+    "_meta": {
+      "title": "Downscale to social size",
+      "pf": {
+        "optional": "upscale",
+        "bypass": {
+          "0": "image"
+        }
+      }
+    }
+  },
+  "60": {
+    "class_type": "SaveImage",
+    "inputs": {
+      "images": [
+        "52",
+        0
+      ],
+      "filename_prefix": "{{FILENAME_PREFIX}}"
+    },
+    "_meta": {
+      "title": "Save raw output"
+    }
+  },
+  "70": {
+    "class_type": "RandomNoise",
+    "inputs": {
+      "noise_seed": "{{SEED}}"
+    },
+    "_meta": {
+      "title": "Seed"
+    }
+  },
+  "71": {
+    "class_type": "KSamplerSelect",
+    "inputs": {
+      "sampler_name": "{{SAMPLER}}"
+    },
+    "_meta": {
+      "title": "Sampler"
+    }
+  },
+  "72": {
+    "class_type": "BasicScheduler",
+    "inputs": {
+      "model": [
+        "22",
+        0
+      ],
+      "scheduler": "{{SCHEDULER}}",
+      "steps": "{{STEPS}}",
+      "denoise": "{{DENOISE}}"
+    },
+    "_meta": {
+      "title": "Scheduler",
+      "pf": {
+        "variantKey": "structureMode",
+        "variants": {
+          "newRoom": {
+            "inputs": {
+              "denoise": 1.0
+            }
+          }
+        }
+      }
+    }
+  },
+  "73": {
+    "class_type": "CFGGuider",
+    "inputs": {
+      "model": [
+        "22",
+        0
+      ],
+      "positive": [
+        "16",
+        0
+      ],
+      "negative": [
+        "16",
+        1
+      ],
+      "cfg": "{{CFG}}"
+    },
+    "_meta": {
+      "title": "CFG guider"
+    }
+  },
+  "74": {
+    "class_type": "DetailDaemonSamplerNode",
+    "inputs": {
+      "sampler": [
+        "71",
+        0
+      ],
+      "detail_amount": "{{DETAIL_AMOUNT}}",
+      "start": 0.2,
+      "end": 0.8,
+      "bias": 0.15,
+      "exponent": 1.0,
+      "start_offset": 0.0,
+      "end_offset": 0.0,
+      "fade": 0.0,
+      "smooth": true,
+      "cfg_scale_override": 0
+    },
+    "_meta": {
+      "title": "Detail Daemon (natural micro-detail without a second pass)",
+      "pf": {
+        "optional": "detailDaemon",
+        "bypass": {
+          "0": "sampler"
+        }
+      }
+    }
+  },
+  "8": {
+    "class_type": "ImageScale",
+    "inputs": {
+      "image": [
+        "10",
+        0
+      ],
+      "upscale_method": "lanczos",
+      "width": "{{WIDTH}}",
+      "height": "{{HEIGHT}}",
+      "crop": "center"
+    },
+    "_meta": {
+      "title": "Reference resized to the target aspect ratio"
+    }
+  },
+  "14": {
+    "class_type": "DWPreprocessor",
+    "inputs": {
+      "image": [
+        "8",
+        0
+      ],
+      "detect_hand": "enable",
+      "detect_body": "enable",
+      "detect_face": "enable",
+      "resolution": "{{CONTROL_RESOLUTION}}",
+      "bbox_detector": "yolox_l.onnx",
+      "pose_estimator": "dw-ll_ucoco_384_bs5.torchscript.pt",
+      "scale_stick_for_xinsr_cn": "enable"
+    },
+    "_meta": {
+      "title": "Pose skeleton of the reference",
+      "pf": {
+        "optional": "poseControl"
+      }
+    }
+  },
+  "15": {
+    "class_type": "ControlNetLoader",
+    "inputs": {
+      "control_net_name": "{{CONTROLNET_POSE_NAME}}"
+    },
+    "_meta": {
+      "title": "OpenPose ControlNet",
+      "pf": {
+        "optional": "poseControl"
+      }
+    }
+  },
+  "16": {
+    "class_type": "ControlNetApplyAdvanced",
+    "inputs": {
+      "positive": [
+        "13",
+        0
+      ],
+      "negative": [
+        "13",
+        1
+      ],
+      "control_net": [
+        "15",
+        0
+      ],
+      "image": [
+        "14",
+        0
+      ],
+      "strength": "{{POSE_STRENGTH}}",
+      "start_percent": 0.0,
+      "end_percent": "{{POSE_END}}",
+      "vae": [
+        "2",
+        0
+      ]
+    },
+    "_meta": {
+      "title": "Apply pose (exact posture)",
+      "pf": {
+        "optional": "poseControl",
+        "bypass": {
+          "0": "positive",
+          "1": "negative"
+        }
+      }
+    }
+  }
+}

@@ -13,6 +13,10 @@ export const ENGINE_TEMPLATES = {
   GENESIS_DATASET: "genesis_dataset",
   FACE_LOCK: "cross_engine_face_lock",
 } as const;
+/** v2.5 Reference Photo Structure Clone (SDXL; used instead of Engine B when a reference photo is supplied). */
+export const STRUCTURE_CLONE_TEMPLATE = "engine_ab_structure_clone";
+export const STRUCTURE_MODES = ["hybrid", "newRoom"] as const;
+export type StructureMode = (typeof STRUCTURE_MODES)[number];
 export type StudioEngine = keyof typeof ENGINE_TEMPLATES;
 export const STUDIO_ENGINES = Object.keys(ENGINE_TEMPLATES) as StudioEngine[];
 
@@ -56,6 +60,8 @@ export interface JobOptions {
   enableUpscale: boolean;
   /** Hi-res second pass (1.5x re-sample at low denoise) on Engines A/B - real detail, not just sharpening. */
   enableHiresFix: boolean;
+  /** Detail Daemon sampler wrapper (Engines A/B): keeps natural micro-detail with no extra render time. */
+  enableDetailDaemon: boolean;
   enablePhoneFinisher: boolean;
   finisherPreset: FinisherPreset;
   finisherIntensity: number;
@@ -67,7 +73,8 @@ export const DEFAULT_JOB_OPTIONS: JobOptions = {
   enableCrossEngineFaceLock: false,
   enableReactorSwap: false,
   enableUpscale: false,
-  enableHiresFix: true,
+  enableHiresFix: false,
+  enableDetailDaemon: true,
   enablePhoneFinisher: true,
   finisherPreset: "iphone_indoor_warm",
   finisherIntensity: 0.7,

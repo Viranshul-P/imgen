@@ -61,7 +61,8 @@ export function PromptStudio() {
   const [checkpoint, setCheckpoint] = React.useState("");
   const [realismLoras, setRealismLoras] = React.useState(true);
   const [faceFix, setFaceFix] = React.useState(true);
-  const [hires, setHires] = React.useState(true);
+  const [hires, setHires] = React.useState(false);
+  const [detailDaemon, setDetailDaemon] = React.useState(true);
   const [phoneLook, setPhoneLook] = React.useState(false);
   const [phonePreset, setPhonePreset] = React.useState<FinisherPreset>("iphone_indoor_warm");
   const [showAdvanced, setShowAdvanced] = React.useState(false);
@@ -122,6 +123,7 @@ export function PromptStudio() {
           ...DEFAULT_JOB_OPTIONS,
           enableFaceDetailer: faceFix,
           enableHiresFix: hires,
+          enableDetailDaemon: detailDaemon,
           enablePhoneFinisher: phoneLook,
           finisherPreset: phonePreset,
         },
@@ -227,9 +229,15 @@ export function PromptStudio() {
               />
             ) : null}
             <Checkbox
+              checked={detailDaemon}
+              onChange={setDetailDaemon}
+              label="Natural detail boost (Detail Daemon) - no extra time"
+              hint="Keeps more real skin, hair and fabric texture while the image is drawn, so it looks less smooth and AI-like"
+            />
+            <Checkbox
               checked={hires}
               onChange={setHires}
-              label={`High resolution pass (1.5x, real detail) - adds ~${engine === "A" ? "1-2 min" : "20 s"}`}
+              label={`Optional: high resolution pass (1.5x, can over-sharpen skin) - adds ~${engine === "A" ? "1-2 min" : "20 s"}`}
               hint="Enlarges the image 1.5x and lets the model redraw skin, eyes, hair and fabric at the bigger size"
             />
             <Checkbox checked={faceFix} onChange={setFaceFix} label="Sharpen face details (FaceDetailer)" hint="Re-draws the face area at higher detail after the image is made" />

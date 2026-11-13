@@ -44,6 +44,11 @@ from download_models import ModelRoots, read_dotenv, resolve_comfy_dir  # noqa: 
 PRESETS = PROJECT / "training" / "presets"
 TARGET_STEPS_SDXL = 1400
 TARGET_STEPS_FLUX = 1200
+# Cloud bundle (48 GB / 80 GB cards): rank 32, alpha 32, 2000 steps, a checkpoint every 250 steps, lr 1e-4, bf16.
+CLOUD_FULL_TIERS = ("48gb", "80gb")
+CLOUD_RANK = 32
+CLOUD_STEPS = 2000
+CLOUD_SAVE_EVERY = 250
 MIN_SIDE = 512
 TRIGGER_RE = re.compile(r"^[A-Za-z0-9_]{3,40}$")
 
@@ -120,14 +125,20 @@ def clean(text: str) -> str:
 
 
 def make_caption(trigger: str, class_word: str, frame: Frame, sub_token: str | None = None) -> str:
-    lead = f"{trigger} {class_word}" + (f", {sub_token}" if sub_token else "")
-    if frame.override.strip():
-        body = clean(frame.override)
-        if trigger not in body:
-            return f"{lead}, {body}"
-        return f"{body}, {sub_token}" if sub_token and sub_token not in body else body
-    hint = clean(frame.hint)
-    return f"{lead}, {hint}" if hint else lead
+    """Every caption starts "<trigger>, <bucket sub-token>, <class word>, ..." (no sub-token for untagged frames).
+
+    A Curator override keeps its wording, but any trigger / sub-token it already contains is moved to the front
+    so the tokens are never duplicated or buried mid-caption.
+    """
+    lead = [trigger] + ([sub_token] if sub_token else [])
+    body = clean(frame.override) if frame.override.strip() else clean(frame.hint)
+    for token in sorted(lead, key=len, reverse=True):
+        body = re.sub(rf"(?<![A-Za-z0-9_]){re.escape(token)}(?![A-Za-z0-9_])", "", body)
+    phrases = [re.sub(r"\s+", " ", ph).strip() for ph in body.split(",")]
+    phrases = [ph for ph in phrases if ph]
+    if not any(re.search(rf"\b{re.escape(class_word)}\b", ph, re.I) for ph in phrases):
+        phrases.insert(0, class_word)
+    return ", ".join(lead + phrases)
 
 
 def check_image(path: Path) -> tuple[int, int] | None:
@@ -303,7 +314,7 @@ def main(argv: list[str]) -> int:
             target_dir = folder_for(frame.bucket)
             shutil.copyfile(frame.image, target_dir / f"{stem}{frame.image.suffix.lower()}")
             sub = sub_token_for(trigger, frame.bucket, custom_tokens)
-            (target_dir / f"{stem}.txt").write_text(make_caption(trigger, class_word, frame, sub) + "\n", encoding="utf-8")
+            write_lf(target_dir / f"{stem}.txt", make_caption(trigger, class_word, frame, sub) + "\n")
             per_bucket[frame.bucket or "general"] = per_bucket.get(frame.bucket or "general", 0) + 1
         if written == 0:
             raise PrepareError("none of the approved frames could be read")
@@ -410,12 +421,35 @@ def main(argv: list[str]) -> int:
             with zipfile.ZipFile(zip_path, "w", compression=zipfile.ZIP_DEFLATED) as zf:
                 for f in sorted(out.rglob("*")):
                     if f.is_file():
-                        zf.write(f, f.relative_to(out.parent).as_posix())
+                        # Unix permissions in the zip, so `unzip` on the cloud machine keeps .sh files executable.
+                        info = zipfile.ZipInfo.from_file(f, f.relative_to(out.parent).as_posix())
+                        info.compress_type = zipfile.ZIP_DEFLATED
+                        info.create_system = 3  # Unix, so unzip applies the mode bits below
+                        info.external_attr = (0o100000 | (0o755 if f.suffix == ".sh" else 0o644)) << 16
+                        zf.writestr(info, f.read_bytes())
         print(json.dumps({**summary, "out": out.as_posix(), "zip": zip_path.as_posix() if zip_path else None}))
         return 0
     except (PrepareError, OSError, sqlite3.Error, json.JSONDecodeError, KeyError) as exc:
         print(f"prepare_dataset: {exc}", file=sys.stderr)
         return 2
+
+
+def write_lf(path: Path, text: str) -> None:
+    """Write with Unix line endings (Path.write_text on Windows writes CRLF, which breaks bash: $'\\r': command not found)."""
+    with open(path, "w", encoding="utf-8", newline="\n") as fh:
+        fh.write(text)
+
+
+RUN_TEMPLATE = Path(__file__).resolve().parent.parent / "training" / "run_cloud_training.template.sh"
+
+
+def run_cloud_training_sh(trigger: str, root: str, local_loras: str) -> str:
+    """Turnkey run_cloud_training.sh: free ComfyUI VRAM, train SDXL then Flux, collect the LoRAs, print the scp command."""
+    dest = (local_loras or r"C:\path\to\ComfyUI_windows_portable\ComfyUI\models\loras").replace("/", "\\").rstrip("\\")
+    # The path lands inside an unquoted bash heredoc and a double-quoted scp argument.
+    dest = dest.replace("$", "\\$").replace("`", "\\`").replace('"', "")
+    text = RUN_TEMPLATE.read_text(encoding="utf-8").replace("\r\n", "\n")
+    return text.replace("@@TRIGGER@@", trigger).replace("@@ROOT@@", root).replace("@@LOCAL_LORAS@@", dest)
 
 
 def yaml_str(value: str) -> str:
@@ -425,8 +459,12 @@ def yaml_str(value: str) -> str:
 def ai_toolkit_yaml(tier: str, trigger: str, class_word: str, root: str, folder_paths: list[str], images: int) -> str:
     """ostris/ai-toolkit Flux.1-dev LoRA config (layout follows config/examples/train_lora_flux_24gb.yaml)."""
     quantize, batch = {"24gb": ("true", 1), "48gb": ("false", 2), "80gb": ("false", 4)}[tier]
-    steps = max(1000, min(4000, round(images * 50 / batch)))
-    save_every = 250 if steps >= 1000 else max(100, steps // 4)
+    if tier in CLOUD_FULL_TIERS:
+        rank, steps, save_every = CLOUD_RANK, CLOUD_STEPS, CLOUD_SAVE_EVERY
+    else:  # 24 GB (8-bit base): unchanged v2.5 recipe
+        rank = 16
+        steps = max(1000, min(4000, round(images * 50 / batch)))
+        save_every = 250 if steps >= 1000 else max(100, steps // 4)
     datasets = "\n".join(
         f"""        - folder_path: {yaml_str(p)}
           caption_ext: "txt"
@@ -454,12 +492,12 @@ config:
       device: cuda:0
       network:
         type: "lora"
-        linear: 16
-        linear_alpha: 16
+        linear: {rank}
+        linear_alpha: {rank}
       save:
         dtype: float16
         save_every: {save_every}
-        max_step_saves_to_keep: 4
+        max_step_saves_to_keep: {max(4, steps // save_every)}
         push_to_hub: false
       datasets:
 {datasets}
@@ -525,24 +563,27 @@ def write_cloud_bundle(out: Path, summary: dict, folders: dict, custom_tokens: d
     cloud_folders = {b: f"{root}/img/{d.name}" for b, d in folders.items()}
 
     for tier in ("24gb", "48gb", "80gb"):
-        (cloud / f"ai-toolkit_flux_{tier}.yaml").write_text(ai_toolkit_yaml(tier, trigger, class_word, root, list(cloud_folders.values()), images), encoding="utf-8")
+        write_lf(cloud / f"ai-toolkit_flux_{tier}.yaml", ai_toolkit_yaml(tier, trigger, class_word, root, list(cloud_folders.values()), images))
 
     sdxl_base = "/workspace/models/RealVisXL_V5.0_fp16.safetensors"
-    samples = 3200  # ~3.2k samples at batch 4 for a full-precision SDXL character LoRA
+    samples = CLOUD_STEPS * 4  # 2000 steps at batch 4 (48 GB and 80 GB cards)
     subsets = [(p, f"{(sub_token_for(trigger, b, custom_tokens) or trigger)} {class_word}") for b, p in cloud_folders.items()]
     preset = json.loads((PRESETS / "kohya_sdxl_lora_8gb.json").read_text(encoding="utf-8"))
-    (cloud / "dataset_sdxl.toml").write_text(dataset_toml(subsets, repeats, {"resolution": 1024, "min_bucket_reso": 640, "max_bucket_reso": 1536}), encoding="utf-8")
+    write_lf(cloud / "dataset_sdxl.toml", dataset_toml(subsets, repeats, {"resolution": 1024, "min_bucket_reso": 640, "max_bucket_reso": 1536}))
     subs = {"TRIGGER": trigger, "OUTPUT_DIR": f"{root}/output", "SDXL_BASE": sdxl_base,
             "DATASET_TOML": f"{root}/cloud/dataset_sdxl.toml", "MAX_STEPS": samples // 4}
     filled = fill(preset, subs)
     assert isinstance(filled, dict)
     filled["args"]["train_batch_size"] = 4
-    filled["args"]["save_every_n_steps"] = 200
-    filled["args"]["network_dim"] = 32
-    filled["args"]["network_alpha"] = 16
+    filled["args"]["save_every_n_steps"] = CLOUD_SAVE_EVERY
+    filled["args"]["max_train_steps"] = CLOUD_STEPS
+    filled["args"]["network_dim"] = CLOUD_RANK
+    filled["args"]["network_alpha"] = CLOUD_RANK
+    filled["args"]["learning_rate"] = 1e-4
+    filled["args"]["mixed_precision"] = "bf16"
     filled["args"]["max_data_loader_n_workers"] = 4
-    (cloud / "kohya_sdxl_train.json").write_text(json.dumps(filled, indent=2), encoding="utf-8")
-    (cloud / "kohya_sdxl_train.sh").write_text(kohya_sh(filled, f"kohya {preset['script']} - {trigger}"), encoding="utf-8")
+    write_lf(cloud / "kohya_sdxl_train.json", json.dumps(filled, indent=2))
+    write_lf(cloud / "kohya_sdxl_train.sh", kohya_sh(filled, f"kohya {preset['script']} - {trigger}"))
 
     ot_preset = json.loads((PRESETS / "onetrainer_sdxl_lora_8gb.json").read_text(encoding="utf-8"))
     epochs = max(1, math.ceil(samples / max(1, images * repeats)))
@@ -550,12 +591,15 @@ def write_cloud_bundle(out: Path, summary: dict, folders: dict, custom_tokens: d
                               "CONCEPTS_FILE": f"{root}/cloud/onetrainer_concepts.json", "EPOCHS": epochs})
     assert isinstance(ot_cfg, dict)
     ot_cfg["batch_size"] = 4
-    (cloud / "onetrainer_sdxl_lora.json").write_text(json.dumps(ot_cfg, indent=2), encoding="utf-8")
+    write_lf(cloud / "onetrainer_sdxl_lora.json", json.dumps(ot_cfg, indent=2))
     concepts = [{"__version": 2, "name": sub_token_for(trigger, b, custom_tokens) or trigger, "path": p, "enabled": True,
                  "type": "STANDARD", "include_subdirectories": False, "balancing": float(repeats),
                  "balancing_strategy": "REPEATS", "text": {"prompt_source": "sample"}} for b, p in cloud_folders.items()]
-    (cloud / "onetrainer_concepts.json").write_text(json.dumps(concepts, indent=2), encoding="utf-8")
-    (out / "README_CLOUD.txt").write_text(cloud_readme(summary, root), encoding="utf-8")
+    write_lf(cloud / "onetrainer_concepts.json", json.dumps(concepts, indent=2))
+    write_lf(out / "README_CLOUD.txt", cloud_readme(summary, root))
+    run_sh = out / "run_cloud_training.sh"
+    write_lf(run_sh, run_cloud_training_sh(trigger, root, summary.get("lora_output_dir") or ""))
+    run_sh.chmod(0o755)
 
 
 def cloud_readme(s: dict, root: str) -> str:
@@ -563,11 +607,23 @@ def cloud_readme(s: dict, root: str) -> str:
     return f"""PersonaForge CLOUD training bundle - {s['trigger']}
 {'=' * 60}
 {s['images']} images across buckets: {', '.join(f'{k}={v}' for k, v in s['buckets'].items())}
-Sub-tokens (also at the start of each caption, after "{s['class_tokens']}"):
+Every caption starts "{s['trigger']}, <bucket sub-token>, {s['class_tokens'].split(' ', 1)[1]}, ..." (untagged frames: "{s['trigger']}, {s['class_tokens'].split(' ', 1)[1]}, ...").
+Sub-tokens:
 {tokens}
+
+Cloud settings (48 GB / 80 GB): rank 32, alpha 32, 2000 steps, a checkpoint every 250 steps, lr 1e-4, bf16.
+(The 24 GB Flux config keeps the 8-bit rank-16 recipe.)
+
+ONE COMMAND (after steps 1 and 2):
+     export HF_TOKEN=<your read token>       # FLUX.1-dev is gated; or SKIP_FLUX=1
+     bash {root}/run_cloud_training.sh
+   It frees ComfyUI's VRAM (POST /free), trains the SDXL LoRA and then the Flux LoRA, copies the finished
+   .safetensors into /workspace/ComfyUI/models/loras/ and /workspace/finished_loras/, and prints the scp
+   command that brings them to your laptop. Steps 3-5 below are the same thing done by hand.
 
 1. Unzip on the cloud machine so this folder exists:  {root}
      mkdir -p {root.rsplit('/', 1)[0]} && unzip <this zip> -d {root.rsplit('/', 1)[0]}
+   (Unzipped somewhere else? run_cloud_training.sh rewrites the paths for you.)
 2. Set up the machine once with scripts/vultr_cloud_setup.sh from the PersonaForge repo
    (it installs ai-toolkit in /workspace/ai-toolkit, kohya sd-scripts in /workspace/sd-scripts and
    downloads the SDXL base model to /workspace/models).

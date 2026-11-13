@@ -30,10 +30,12 @@ The CLI does the same from the studio database:
 ..\ComfyUI_windows_portable\python_embeded\python.exe -I scripts\prepare_dataset.py --db prisma\dev.db --trigger v1ra_person --out data\exports\datasets\v1ra --zip
 ```
 
-**Captions** look like `v1ra_person woman, waist-up shot, three-quarter view from the left, warm bedside lamp light, soft smile`.
+**Captions** always start with the trigger, then the frame's bucket sub-token (if it has a bucket), then the class word:
+`v1ra_person, v1ra_person_face, woman, waist-up shot, three-quarter view from the left, warm bedside lamp light, soft smile`
+(untagged frames: `v1ra_person, woman, ...`).
 - They name only what *changes* between frames: framing, angle, light and expression.
 - Fixed traits (eye colour, freckles, hair texture) are left out on purpose, so the LoRA binds them to the trigger token.
-- A caption typed in the Curator replaces the automatic one. The trigger and class word are added in front if you leave them out.
+- A caption typed in the Curator replaces the automatic one. The trigger and sub-token are always moved to the front (and the class word added if missing).
 
 **Check the angle words before exporting.** IP-Adapter FaceID pulls faces toward the camera, so a frame generated for "left profile" often comes out nearly frontal (seen in the Phase 7 test). A caption that names the wrong angle teaches the LoRA the wrong thing, so fix it in the frame's caption box (e.g. `front view` instead of `right profile`) or reject the frame. FaceID can also exaggerate freckles or redness; reject frames whose skin doesn't match the master face.
 

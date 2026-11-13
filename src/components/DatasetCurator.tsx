@@ -11,6 +11,7 @@ interface ExportResult {
   images: number;
   repeats: number;
   steps_per_epoch: number;
+  trigger: string;
   class_tokens: string;
   folder: string;
   zipUrl: string | null;
@@ -196,7 +197,7 @@ export function DatasetCurator({ footer }: { footer?: React.ReactNode }) {
           {lastExport ? (
             <div className="flex flex-col gap-1 text-xs text-muted-foreground">
               <span>
-                {lastExport.images} images x {lastExport.repeats} = {lastExport.steps_per_epoch} steps/epoch, captions start with &quot;{lastExport.class_tokens}&quot;. Folder: data/
+                {lastExport.images} images x {lastExport.repeats} = {lastExport.steps_per_epoch} steps/epoch, captions start with &quot;{lastExport.trigger}, &lt;bucket sub-token&gt;&quot;. Folder: data/
                 {lastExport.folder} (README.txt inside has the exact steps).
               </span>
               {lastExport.zipUrl ? (

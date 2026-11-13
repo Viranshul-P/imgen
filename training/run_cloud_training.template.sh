@@ -24,6 +24,7 @@ SKIP_SDXL="${SKIP_SDXL:-0}"
 SKIP_FLUX="${SKIP_FLUX:-0}"
 TRIGGER="@@TRIGGER@@"
 GENERATED_ROOT="@@ROOT@@"
+KEEP_FROM="${KEEP_FROM:-@@KEEP_FROM@@}"   # step checkpoints kept from this step on (600, 800, 1000; 1200 is the final)
 COMFY_LORAS="$WORKSPACE/ComfyUI/models/loras"
 FINISHED="$WORKSPACE/finished_loras"
 OUTPUT="$BUNDLE/output"
@@ -73,7 +74,7 @@ nvidia-smi --query-gpu=name,memory.used,memory.total --format=csv,noheader || tr
 START=$(date +%s)
 # ------------------------------------------------------------------------------------------- 2a. SDXL
 if [ "$SKIP_SDXL" != "1" ]; then
-  say "SDXL LoRA (kohya sd-scripts, rank 32, 2000 steps, a checkpoint every 250)"
+  say "SDXL LoRA (kohya sd-scripts, rank 32, batch 2, 1200 steps, a checkpoint every 200)"
   (
     # shellcheck disable=SC1091
     source "$SDXL_VENV/bin/activate"
@@ -112,9 +113,13 @@ for f in "${FINALS[@]}"; do
   cp -f "$f" "$FINISHED/"
   echo "  $(basename "$f")  ->  $COMFY_LORAS/  and  $FINISHED/"
 done
-# Intermediate step checkpoints (every 250 steps): pick an earlier one if the final looks over-trained.
+# Intermediate step checkpoints from step $KEEP_FROM on: pick an earlier one if the final looks over-trained.
+# kohya names them <name>-step00000600.safetensors, ai-toolkit <name>_000000600.safetensors.
 for f in "${ALL[@]}"; do
-  printf '%s\n' "${FINALS[@]}" | grep -qxF "$f" || cp -f "$f" "$FINISHED/checkpoints/"
+  printf '%s\n' "${FINALS[@]}" | grep -qxF "$f" && continue
+  step="$(basename "$f" .safetensors | grep -oE '[0-9]+$' || true)"
+  if [ -n "$step" ] && [ "$((10#$step))" -lt "$KEEP_FROM" ]; then continue; fi
+  cp -f "$f" "$FINISHED/checkpoints/"
 done
 echo "  step checkpoints -> $FINISHED/checkpoints/ ($(find "$FINISHED/checkpoints" -name '*.safetensors' | wc -l) files)"
 curl -fsS "$COMFY_URL/object_info/LoraLoader" >/dev/null 2>&1 && echo "The cloud ComfyUI sees the new LoRAs (press Refresh Models in the studio)." || true

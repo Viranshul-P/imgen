@@ -63,7 +63,7 @@ export interface JobOptions {
   enableReactorSwap: boolean;
   /**
    * ReActor swap whose ONLY possible source is the fictional character's own AI-generated master_face.png,
-   * read by the planner from the character record. Followed by FaceDetailer at 0.28 denoise.
+   * read by the planner from the character record. Blended 60% over the pre-swap render, then FaceDetailer at 0.28 denoise.
    */
   enableReactorMasterFace: boolean;
   enableUpscale: boolean;

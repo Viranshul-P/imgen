@@ -87,8 +87,8 @@ version ID (the number after `?modelVersionId=`), a Civitai download link or any
       (step checkpoints go to `/workspace/finished_loras/checkpoints/`), then prints the exact `scp` command to
       run in PowerShell on your laptop.
 
-   Cloud settings for 48 GB / 80 GB cards: rank 32, alpha 32, 2000 steps, a checkpoint every 250 steps,
-   lr 1e-4, bf16. Every caption starts `<trigger>, <bucket sub-token>, ...`.
+   Cloud settings for 48 GB / 80 GB cards: rank 32, alpha 32, batch 2, 1200 steps, lr 1e-4, bf16. A checkpoint
+   is saved every 200 steps; the script keeps steps 600, 800, 1000 and the final 1200. Every caption starts `<trigger>, <bucket sub-token>, ...`.
 
    The manual steps (same as before) are in `README_CLOUD.txt`:
 

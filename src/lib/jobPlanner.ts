@@ -104,6 +104,8 @@ export const MAX_CANDIDATES = 20;
 /** ReActor master-face pass: the FaceDetailer that follows it runs at this denoise to blend the swap. */
 export const REACTOR_FACE_DENOISE = 0.28;
 export const REACTOR_VISIBILITY = 0.55;
+/** True partial-strength swap: ImageBlend puts 60% of the ReActor result over 40% of the pre-swap render. */
+export const REACTOR_BLEND = 0.6;
 export const DATASET_SIZE = 35;
 
 const FEATURE_FROM_OPTION: Record<string, keyof JobOptions> = {
@@ -281,6 +283,7 @@ export async function planShoot(req: ShootRequest, character: PlannerCharacter |
   if (masterFace) {
     setIf(template, values, "FACE_DENOISE", REACTOR_FACE_DENOISE);
     setIf(template, values, "REACTOR_VISIBILITY", REACTOR_VISIBILITY);
+    setIf(template, values, "REACTOR_BLEND", REACTOR_BLEND);
   }
   setIf(template, values, "FILENAME_PREFIX", `personaforge/${template.meta.name}`);
 

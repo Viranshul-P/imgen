@@ -2,7 +2,7 @@
 
 import { ListOrdered, Plus, Upload, X } from "lucide-react";
 import * as React from "react";
-import { Badge, Button, Card, CardContent, CardDescription, CardHeader, CardTitle, Field, Input, Select, Slider, Textarea } from "@/components/ui/primitives";
+import { Badge, Button, Card, CardContent, CardDescription, CardHeader, CardTitle, Checkbox, Field, Input, Select, Slider, Textarea } from "@/components/ui/primitives";
 import { SCENE_KITS } from "@/lib/sceneKits";
 import { DEFAULT_JOB_OPTIONS } from "@/lib/types";
 import { fileUrl } from "@/lib/utils";
@@ -43,6 +43,8 @@ export function ArcProgressionBuilder() {
   const [loras, setLoras] = React.useState<LoraSpec[]>([]);
   const [seed, setSeed] = React.useState("");
   const [poseStrength, setPoseStrength] = React.useState(0.7);
+  /** ReActor master-face swap (pose mode only: inpaint stages keep the base frame's face pixel-locked). */
+  const [reactorMasterFace, setReactorMasterFace] = React.useState(false);
   const [submitting, setSubmitting] = React.useState(false);
 
   const characterCampaigns = campaigns.filter((c) => c.characterId === characterId);
@@ -88,7 +90,7 @@ export function ArcProgressionBuilder() {
         loras,
         seed: seed.trim() ? Number(seed) : undefined,
         poseStrength,
-        options: { ...DEFAULT_JOB_OPTIONS, enableUpscale: false },
+        options: { ...DEFAULT_JOB_OPTIONS, enableUpscale: false, enableReactorMasterFace: mode === "pose" && Boolean(character?.masterFacePath) && reactorMasterFace },
       });
       notify("ok", `Queued ${res.queued} stages - VRAM flushes are handled between engines`);
       await reloadCampaigns();
@@ -231,6 +233,20 @@ export function ArcProgressionBuilder() {
               <Plus /> Add stage
             </Button>
           </div>
+
+          <Checkbox
+            checked={mode === "pose" && Boolean(character.masterFacePath) && reactorMasterFace}
+            onChange={setReactorMasterFace}
+            label="ReActor: swap in this character's master face on every stage"
+            disabled={mode !== "pose" || !character.masterFacePath}
+            hint={
+              mode !== "pose"
+                ? "Inpaint mode keeps the base frame's face pixel-locked, so no swap is needed"
+                : character.masterFacePath
+                  ? "Source is always the character's own generated master_face.png (visibility 0.55, no face restore), then FaceDetailer at 0.28"
+                  : "Pick a master face in the Character tab first"
+            }
+          />
 
           <div className="grid gap-3 sm:grid-cols-[1fr_160px]">
             <Field label="Stage LoRAs (applied to every stage, after the Character LoRA)">

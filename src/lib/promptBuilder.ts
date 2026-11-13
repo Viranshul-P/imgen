@@ -38,6 +38,11 @@ export interface PromptRequest {
   extraNegative?: string;
   /** Prompt tab: send the user's text to the model exactly as typed (no identity, kit or default negatives). */
   raw?: boolean;
+  /**
+   * Structure Clone: the posture and framing come from the reference photo, so the kit's pose/framing
+   * scene text is left out and only this room + lighting text is added (the kit negatives still apply).
+   */
+  structureRoom?: string;
 }
 
 export interface BuiltPrompt {
@@ -72,13 +77,15 @@ export function buildPrompt(req: PromptRequest): BuiltPrompt {
     return { positive: req.userPrompt.trim(), negative: (req.extraNegative ?? "").trim(), sheenWords: detectSheenWords(req.userPrompt) };
   }
   const kit = getSceneKit(req.sceneKitId);
+  const clone = req.structureRoom !== undefined;
+  const room = req.structureRoom?.trim() ?? "";
   const identity = req.character ? [req.character.triggerToken, req.character.descriptors].filter(Boolean).join(", ") : "";
 
   let positive: string;
   let negative: string;
   if (req.engine === "A") {
     // Flux: prose. The trigger token opens the first sentence so the Character LoRA binds early.
-    positive = [sentence(identity ? `A photo of ${identity}` : ""), sentence(req.userPrompt), kit ? sentence(kit.flux) : ""]
+    positive = [sentence(identity ? `A photo of ${identity}` : ""), sentence(req.userPrompt), clone ? sentence(room) : kit ? sentence(kit.flux) : ""]
       .filter(Boolean)
       .join(" ");
     // Flux runs at cfg 1 with FluxGuidance: negatives have no effect; keep them for the SDXL face-lock pass.
@@ -90,7 +97,7 @@ export function buildPrompt(req: PromptRequest): BuiltPrompt {
     positive = joinPhrases([req.userPrompt, "natural fabric folds and texture", "same soft indoor lighting as the rest of the photo"]);
     negative = joinPhrases([SDXL_BASE_NEGATIVE, WARDROBE_NEGATIVE, req.character?.negativePrompt, req.extraNegative]);
   } else {
-    positive = joinPhrases([identity, req.userPrompt, kit?.sdxl]);
+    positive = joinPhrases([identity, req.userPrompt, clone ? room : kit?.sdxl]);
     negative = joinPhrases([SDXL_BASE_NEGATIVE, kit?.negative, req.character?.negativePrompt, req.extraNegative]);
   }
   return { positive, negative, sheenWords: detectSheenWords(`${req.userPrompt} ${identity}`) };

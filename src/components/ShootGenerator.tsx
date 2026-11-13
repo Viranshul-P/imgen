@@ -59,6 +59,12 @@ export function ShootGenerator() {
   const controlInput = React.useRef<HTMLInputElement>(null);
   const cloneInput = React.useRef<HTMLInputElement>(null);
   const [clone, setClone] = React.useState<{ path: string; mode: StructureMode; depthStrength: number; poseStrength: number; denoise: number } | null>(null);
+  /** Structure Clone room description; blank in New-Room mode = the selected scene kit's room/lighting. */
+  const [cloneRoom, setCloneRoom] = React.useState("");
+  const cloneEngine = engine === "A" || engine === "B";
+  /** Flux has no ControlNet here, so Engine A clones always run in hybrid (img2img) mode. */
+  const cloneMode: StructureMode = engine === "A" ? "hybrid" : (clone?.mode ?? "hybrid");
+  const kitRoom = getSceneKit(sceneKit)?.room[engine === "A" ? "flux" : "sdxl"];
 
   const sheen = detectSheenWords(prompt);
   const allLoras = catalog?.loras ?? [];
@@ -106,15 +112,20 @@ export function ShootGenerator() {
         steps: steps.trim() ? Number(steps) : undefined,
         cfg: engine !== "A" ? cfg : undefined,
         guidance: engine === "A" ? guidance : undefined,
-        options: { ...options, enableCrossEngineFaceLock: engine === "A" && options.enableCrossEngineFaceLock },
+        options: {
+          ...options,
+          enableCrossEngineFaceLock: engine === "A" && options.enableCrossEngineFaceLock,
+          enableReactorMasterFace: engine !== "C" && Boolean(character?.masterFacePath) && options.enableReactorMasterFace,
+        },
         structureClone:
-          engine === "B" && clone
+          cloneEngine && clone
             ? {
                 imagePath: clone.path,
-                mode: clone.mode,
-                depthStrength: clone.depthStrength,
-                poseStrength: clone.mode === "newRoom" ? clone.poseStrength : undefined,
-                denoise: clone.mode === "hybrid" ? clone.denoise : undefined,
+                mode: cloneMode,
+                depthStrength: engine === "B" ? clone.depthStrength : undefined,
+                poseStrength: engine === "B" && cloneMode === "newRoom" ? clone.poseStrength : undefined,
+                denoise: cloneMode === "hybrid" ? clone.denoise : undefined,
+                roomPrompt: cloneRoom.trim() || undefined,
               }
             : undefined,
         control: engine === "B" && control && !clone ? { imagePath: control.path, mode: control.mode, strength: control.strength } : undefined,
@@ -219,10 +230,12 @@ export function ShootGenerator() {
             </Field>
           ) : null}
 
-          {engine === "B" ? (
+          {cloneEngine ? (
             <div className="grid gap-3 rounded-lg border border-border p-3 sm:grid-cols-2">
               <div className="flex flex-col gap-2">
-                <span className="text-xs font-medium text-muted-foreground">Clone Pose, Perspective &amp; Lighting (real reference photo)</span>
+                <span className="text-xs font-medium text-muted-foreground">
+                  Clone Pose, Perspective &amp; Lighting (real reference photo) - {engine === "A" ? "Flux skin quality" : "SDXL + ControlNet"}
+                </span>
                 <div
                   className="flex min-h-28 cursor-pointer items-center justify-center rounded-md border border-dashed border-border text-xs text-muted-foreground"
                   onClick={() => cloneInput.current?.click()}
@@ -256,21 +269,29 @@ export function ShootGenerator() {
               <div className="flex flex-col gap-3">
                 <Field label="Structure mode">
                   <Select
-                    value={clone?.mode ?? "hybrid"}
-                    disabled={!clone}
+                    value={cloneMode}
+                    disabled={!clone || engine === "A"}
                     onChange={(e) => {
                       const mode = e.target.value as StructureMode;
                       if (clone) setClone({ ...clone, mode, depthStrength: mode === "newRoom" ? 0.45 : 0.48 });
                     }}
                   >
-                    <option value="hybrid">Depth + Img2Img Hybrid (keeps the room light)</option>
-                    <option value="newRoom">Depth + OpenPose Only (100% new background)</option>
+                    {engine === "A" ? (
+                      <option value="hybrid">Flux Img2Img (VAE encode + Detail Daemon; New-Room needs Engine B)</option>
+                    ) : (
+                      <>
+                        <option value="hybrid">Depth + Img2Img Hybrid (keeps the room light)</option>
+                        <option value="newRoom">Depth + OpenPose Only (100% new background)</option>
+                      </>
+                    )}
                   </Select>
                 </Field>
-                <Field label={`Depth strength ${(clone?.depthStrength ?? 0.48).toFixed(2)}`}>
-                  <Slider value={clone?.depthStrength ?? 0.48} min={0.2} max={0.9} step={0.01} onChange={(v) => clone && setClone({ ...clone, depthStrength: v })} />
-                </Field>
-                {clone?.mode === "newRoom" ? (
+                {engine === "B" ? (
+                  <Field label={`Depth strength ${(clone?.depthStrength ?? 0.48).toFixed(2)}`}>
+                    <Slider value={clone?.depthStrength ?? 0.48} min={0.2} max={0.9} step={0.01} onChange={(v) => clone && setClone({ ...clone, depthStrength: v })} />
+                  </Field>
+                ) : null}
+                {engine === "B" && clone?.mode === "newRoom" ? (
                   <Field label={`Pose strength ${clone.poseStrength.toFixed(2)}`}>
                     <Slider value={clone.poseStrength} min={0.3} max={1} step={0.01} onChange={(v) => setClone({ ...clone, poseStrength: v })} />
                   </Field>
@@ -279,6 +300,20 @@ export function ShootGenerator() {
                     <Slider value={clone?.denoise ?? 0.77} min={0.72} max={0.82} step={0.01} onChange={(v) => clone && setClone({ ...clone, denoise: v })} />
                   </Field>
                 )}
+                <Field label="Room description (optional)">
+                  <Input
+                    value={cloneRoom}
+                    onChange={(e) => setCloneRoom(e.target.value)}
+                    disabled={!clone}
+                    placeholder={
+                      cloneMode === "newRoom"
+                        ? kitRoom
+                          ? `blank = scene kit room: ${kitRoom.slice(0, 60)}...`
+                          : "blank = no room text (pick a scene kit to use its room)"
+                        : "blank = keep the photo's own room and light"
+                    }
+                  />
+                </Field>
                 {clone ? (
                   <Button size="sm" variant="ghost" onClick={() => setClone(null)}>
                     Remove structure reference
@@ -417,6 +452,17 @@ export function ShootGenerator() {
               hint="Enlarges 1.5x and lets the model redraw real skin/eye/hair detail before the face pass"
             />
             <Checkbox checked={options.enableUpscale} onChange={(v) => setOpt("enableUpscale", v)} label="Upscale then downscale to 1080 wide" disabled={engine === "C"} />
+            <Checkbox
+              checked={options.enableReactorMasterFace && engine !== "C" && Boolean(character?.masterFacePath)}
+              onChange={(v) => setOpt("enableReactorMasterFace", v)}
+              label="ReActor: swap in this character's master face"
+              disabled={engine === "C" || !character?.masterFacePath}
+              hint={
+                character?.masterFacePath
+                  ? "Source is always the character's own generated master_face.png (visibility 0.55, no face restore), then FaceDetailer at 0.28"
+                  : "Pick a master face in the Character tab first"
+              }
+            />
             <Checkbox checked={options.enablePhoneFinisher} onChange={(v) => setOpt("enablePhoneFinisher", v)} label="Phone Look Finisher" />
             <Select value={options.finisherPreset} onChange={(e) => setOpt("finisherPreset", e.target.value as JobOptions["finisherPreset"])} disabled={!options.enablePhoneFinisher}>
               {FINISHER_PRESETS.map((p) => (

@@ -4,6 +4,7 @@
  */
 import { randomInt } from "node:crypto";
 import { assertMinorSafe } from "./contentSafety";
+import { assertGeneratedMasterFace } from "./masterFace";
 import { buildPrompt } from "./promptBuilder";
 import { getComfyEndpoint } from "./comfyEndpoint";
 import { ASPECT_SIZES, REMOTE_ASPECT_SIZES, SOCIAL_SIZES, getSceneKit } from "./sceneKits";
@@ -12,6 +13,7 @@ import {
   DEFAULT_JOB_OPTIONS,
   ENGINE_A_NATIVE_TEMPLATE,
   ENGINE_TEMPLATES,
+  FLUX_STRUCTURE_CLONE_TEMPLATE,
   STRUCTURE_CLONE_TEMPLATE,
   type StructureMode,
   type JobOptions,
@@ -57,11 +59,20 @@ export interface ShootRequest {
   options?: Partial<JobOptions>;
   control?: { imagePath: string; mode: "pose" | "depth"; strength?: number; end?: number };
   /**
-   * Reference Photo Structure Clone (Engine B only): copy a real photo's camera angle, posture and lighting.
-   * hybrid = depth ControlNet + the photo as the img2img base (keeps the room light and slouch);
+   * Reference Photo Structure Clone: copy a real photo's camera angle, posture and lighting.
+   * Engine B (SDXL): hybrid = depth ControlNet + the photo as the img2img base (keeps the room light and slouch);
    * newRoom = empty latent guided by depth + OpenPose (same posture, brand-new room).
+   * Engine A (Flux): hybrid only - the photo is VAE-encoded and re-sampled at 0.72-0.82 denoise with Detail Daemon.
+   * roomPrompt describes the room; left blank in newRoom mode, the selected scene kit's room/lighting text is used.
    */
-  structureClone?: { imagePath: string; mode: StructureMode; depthStrength?: number; poseStrength?: number; denoise?: number };
+  structureClone?: {
+    imagePath: string;
+    mode: StructureMode;
+    depthStrength?: number;
+    poseStrength?: number;
+    denoise?: number;
+    roomPrompt?: string;
+  };
   faceReferencePath?: string;
   inpaint?: { baseImagePath: string; maskPath: string; denoise?: number };
   stage?: number;
@@ -90,6 +101,9 @@ export interface PlannedJob {
 }
 
 export const MAX_CANDIDATES = 20;
+/** ReActor master-face pass: the FaceDetailer that follows it runs at this denoise to blend the swap. */
+export const REACTOR_FACE_DENOISE = 0.28;
+export const REACTOR_VISIBILITY = 0.55;
 export const DATASET_SIZE = 35;
 
 const FEATURE_FROM_OPTION: Record<string, keyof JobOptions> = {
@@ -164,7 +178,14 @@ export async function planShoot(req: ShootRequest, character: PlannerCharacter |
   const engineKey: StudioEngine = req.engine;
   const clone = req.structureClone;
   if (clone) {
-    if (req.engine !== "B") throw new BadRequestError("Structure Clone runs on Engine B (SDXL)");
+    if (req.engine === "C") throw new BadRequestError("Structure Clone runs on Engine A (Flux) or Engine B (SDXL)");
+    if (req.engine === "A" && clone.mode !== "hybrid") {
+      throw new BadRequestError("New-Room mode needs the depth + OpenPose ControlNets, which are SDXL-only here; switch to Engine B or use Flux hybrid mode");
+    }
+    if (req.engine === "A" && req.unet && !/\.gguf$/i.test(req.unet)) throw new BadRequestError("Flux Structure Clone uses the GGUF UNet loader; pick a .gguf UNet");
+    if (clone.roomPrompt !== undefined && (typeof clone.roomPrompt !== "string" || clone.roomPrompt.length > 1000)) {
+      throw new BadRequestError("room description must be text of at most 1000 characters");
+    }
     if (req.control) throw new BadRequestError("use either the pose/depth reference or the Structure Clone reference, not both");
     if (!clone.imagePath) throw new BadRequestError("Structure Clone needs a reference photo");
     if (clone.mode !== "hybrid" && clone.mode !== "newRoom") throw new BadRequestError("structure mode must be hybrid or newRoom");
@@ -178,9 +199,17 @@ export async function planShoot(req: ShootRequest, character: PlannerCharacter |
   }
   // Remote Cloud GPU mode lifts the 8 GB limits: native FP16 Flux (any non-GGUF UNet) and larger renders.
   const remote = (await getComfyEndpoint()).remote;
-  const nativeFlux = req.engine === "A" && Boolean(req.unet) && !/\.gguf$/i.test(req.unet ?? "");
+  const nativeFlux = !clone && req.engine === "A" && Boolean(req.unet) && !/\.gguf$/i.test(req.unet ?? "");
   if (nativeFlux && !remote) throw new BadRequestError("native FP16 Flux needs Remote Cloud GPU mode (switch the endpoint in the header); on the laptop use a .gguf UNet");
-  const template = await loadTemplate(clone ? STRUCTURE_CLONE_TEMPLATE : nativeFlux ? ENGINE_A_NATIVE_TEMPLATE : ENGINE_TEMPLATES[engineKey]);
+  const template = await loadTemplate(
+    clone
+      ? req.engine === "A"
+        ? FLUX_STRUCTURE_CLONE_TEMPLATE
+        : STRUCTURE_CLONE_TEMPLATE
+      : nativeFlux
+        ? ENGINE_A_NATIVE_TEMPLATE
+        : ENGINE_TEMPLATES[engineKey],
+  );
   const count = req.candidateCount ?? 1;
   if (!Number.isInteger(count) || count < 1 || count > MAX_CANDIDATES) throw new BadRequestError(`candidateCount must be 1..${MAX_CANDIDATES}`);
   const raw = req.rawPrompt === true;
@@ -195,6 +224,21 @@ export async function planShoot(req: ShootRequest, character: PlannerCharacter |
 
   const options = resolveOptions(req.options);
   const kit = raw ? undefined : getSceneKit(req.sceneKit);
+
+  // ReActor runs only with the character's own generated master face (looked up here, never taken from the request).
+  let masterFace: string | null = null;
+  if (options.enableReactorMasterFace) {
+    if (raw) throw new BadRequestError("the ReActor master-face swap needs a character; the Prompt tab has none");
+    if (req.engine === "C") throw new BadRequestError("Engine C keeps the original face pixel-locked, so the ReActor master-face swap does not apply; turn it off for inpaint stages");
+    if (!("reactorMasterFace" in template.meta.features)) throw new BadRequestError(`${template.meta.name} has no ReActor master-face pass`);
+    if (!character) throw new BadRequestError("select a character to use the ReActor master-face swap");
+    masterFace = await assertGeneratedMasterFace(character);
+  }
+
+  // Structure Clone room text: the user's room description, or in New-Room mode the kit's room/lighting
+  // text when it is left blank. Hybrid mode keeps the photo's own room, so nothing is added by default.
+  const typedRoom = clone?.roomPrompt?.trim() ?? "";
+  const structureRoom = clone ? typedRoom || (clone.mode === "newRoom" && kit ? kit.room[req.engine === "A" ? "flux" : "sdxl"] : "") : undefined;
   const built = buildPrompt({
     engine: req.engine,
     userPrompt: req.prompt ?? "",
@@ -202,6 +246,7 @@ export async function planShoot(req: ShootRequest, character: PlannerCharacter |
     sceneKitId: raw ? undefined : req.sceneKit,
     extraNegative: req.negativePrompt,
     raw,
+    structureRoom,
   });
   assertMinorSafe(built.positive);
   const aspect = req.aspect ?? kit?.aspect ?? "4:5";
@@ -233,12 +278,17 @@ export async function planShoot(req: ShootRequest, character: PlannerCharacter |
   }
   setIf(template, values, "CONTROL_END", req.control?.end);
   setIf(template, values, "INPAINT_DENOISE", req.inpaint?.denoise);
+  if (masterFace) {
+    setIf(template, values, "FACE_DENOISE", REACTOR_FACE_DENOISE);
+    setIf(template, values, "REACTOR_VISIBILITY", REACTOR_VISIBILITY);
+  }
   setIf(template, values, "FILENAME_PREFIX", `personaforge/${template.meta.name}`);
 
   const inputs: Record<string, string> = {};
   if (req.control) inputs["CONTROL_IMAGE"] = req.control.imagePath;
   if (clone) inputs["STRUCTURE_REFERENCE_IMAGE"] = clone.imagePath;
   if (req.faceReferencePath) inputs["FACE_REFERENCE_IMAGE"] = req.faceReferencePath;
+  if (masterFace) inputs["MASTER_FACE_IMAGE"] = masterFace;
   if (req.inpaint) {
     inputs["BASE_STAGE_IMAGE"] = req.inpaint.baseImagePath;
     inputs["USER_MASK_IMAGE"] = req.inpaint.maskPath;
@@ -247,9 +297,14 @@ export async function planShoot(req: ShootRequest, character: PlannerCharacter |
     controlnet: Boolean(req.control),
     ipadapter: Boolean(req.faceReferencePath),
     poseControl: clone?.mode === "newRoom",
+    reactorMasterFace: Boolean(masterFace),
+    // FaceDetailer always follows the swap (0.28 denoise) to blend the seam.
+    ...(masterFace ? { faceDetailer: true } : {}),
   });
   const variants: Record<string, string> = clone
-    ? { structureMode: clone.mode }
+    ? template.meta.variants?.["structureMode"]
+      ? { structureMode: clone.mode }
+      : {}
     : req.control && template.meta.variants?.["controlMode"]
       ? { controlMode: req.control.mode }
       : {};

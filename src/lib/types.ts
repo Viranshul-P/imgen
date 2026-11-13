@@ -15,6 +15,8 @@ export const ENGINE_TEMPLATES = {
 } as const;
 /** v2.5 Reference Photo Structure Clone (SDXL; used instead of Engine B when a reference photo is supplied). */
 export const STRUCTURE_CLONE_TEMPLATE = "engine_ab_structure_clone";
+/** v2.6 Flux Structure Clone (Engine A): the reference photo is VAE-encoded and re-sampled at 0.72-0.82 denoise. */
+export const FLUX_STRUCTURE_CLONE_TEMPLATE = "engine_a_structure_clone";
 /** Engine A on a cloud GPU: native FP16 Flux instead of the 8 GB GGUF quantisation (Remote Cloud GPU mode only). */
 export const ENGINE_A_NATIVE_TEMPLATE = "engine_a_flux_native";
 export const STRUCTURE_MODES = ["hybrid", "newRoom"] as const;
@@ -57,8 +59,13 @@ export interface JobOptions {
   enableFaceDetailer: boolean;
   enableHandDetailer: boolean;
   enableCrossEngineFaceLock: boolean;
-  /** ReActor is installed but deliberately not wired into PersonaForge graphs; true is rejected. */
+  /** Arbitrary ReActor face swaps (any uploaded face) stay disabled; true is rejected. */
   enableReactorSwap: boolean;
+  /**
+   * ReActor swap whose ONLY possible source is the fictional character's own AI-generated master_face.png,
+   * read by the planner from the character record. Followed by FaceDetailer at 0.28 denoise.
+   */
+  enableReactorMasterFace: boolean;
   enableUpscale: boolean;
   /** Hi-res second pass (1.5x re-sample at low denoise) on Engines A/B - real detail, not just sharpening. */
   enableHiresFix: boolean;
@@ -74,6 +81,7 @@ export const DEFAULT_JOB_OPTIONS: JobOptions = {
   enableHandDetailer: false,
   enableCrossEngineFaceLock: false,
   enableReactorSwap: false,
+  enableReactorMasterFace: false,
   enableUpscale: false,
   enableHiresFix: false,
   enableDetailDaemon: true,

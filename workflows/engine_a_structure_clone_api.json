@@ -1,0 +1,780 @@
+{
+  "_pf": {
+    "name": "engine_a_structure_clone",
+    "engine": "FLUX_GGUF",
+    "description": "Flux Structure Clone (Engine A): copies the posture, camera angle and room lighting of a real reference photo with Flux skin quality. The photo is VAE-encoded and re-sampled at partial denoise (0.72-0.82) through Detail Daemon. The clone pass uses a linear sigma schedule (ModelSamplingFlux shift 0 + simple scheduler) so 0.77 really starts at 77% noise; on Flux's default shifted beta schedule 0.77 is ~95% noise and the photo's structure is lost. No ControlNet (the depth/OpenPose nets here are SDXL-only), so there is no New-Room mode on Flux.",
+    "placeholders": {
+      "POSITIVE_PROMPT": {
+        "type": "string",
+        "default": ""
+      },
+      "SEED": {
+        "type": "int",
+        "default": 0
+      },
+      "GUIDANCE": {
+        "type": "float",
+        "default": 2.6,
+        "min": 1.8,
+        "max": 4.0
+      },
+      "STEPS": {
+        "type": "int",
+        "default": 24
+      },
+      "SAMPLER": {
+        "type": "string",
+        "default": "euler"
+      },
+      "SCHEDULER": {
+        "type": "string",
+        "default": "beta"
+      },
+      "WIDTH": {
+        "type": "int",
+        "default": 896
+      },
+      "HEIGHT": {
+        "type": "int",
+        "default": 1152
+      },
+      "UNET_NAME": {
+        "type": "string",
+        "default": "flux1-dev-Q4_K_S.gguf",
+        "modelCategory": "unet_gguf"
+      },
+      "CLIP_T5_NAME": {
+        "type": "string",
+        "default": "t5-v1_1-xxl-encoder-Q3_K_S.gguf",
+        "modelCategory": "clip_gguf"
+      },
+      "CLIP_L_NAME": {
+        "type": "string",
+        "default": "clip_l.safetensors",
+        "modelCategory": "clip_gguf"
+      },
+      "VAE_NAME": {
+        "type": "string",
+        "default": "ae.safetensors",
+        "modelCategory": "vae"
+      },
+      "DETAILER_STEPS": {
+        "type": "int",
+        "default": 16
+      },
+      "FACE_DENOISE": {
+        "type": "float",
+        "default": 0.28
+      },
+      "FACE_DETECTOR": {
+        "type": "string",
+        "default": "bbox/face_yolov8m.pt",
+        "modelCategory": "ultralytics"
+      },
+      "UPSCALE_MODEL": {
+        "type": "string",
+        "default": "4x-UltraSharp.pth",
+        "modelCategory": "upscale_models"
+      },
+      "HIRES_WIDTH": {
+        "type": "int",
+        "default": 1344
+      },
+      "HIRES_HEIGHT": {
+        "type": "int",
+        "default": 1728
+      },
+      "HIRES_STEPS": {
+        "type": "int",
+        "default": 12
+      },
+      "HIRES_DENOISE": {
+        "type": "float",
+        "default": 0.35,
+        "min": 0.15,
+        "max": 0.6
+      },
+      "OUTPUT_WIDTH": {
+        "type": "int",
+        "default": 1080
+      },
+      "OUTPUT_HEIGHT": {
+        "type": "int",
+        "default": 1350
+      },
+      "FILENAME_PREFIX": {
+        "type": "string",
+        "default": "personaforge/engine_a_structure_clone"
+      },
+      "DETAIL_AMOUNT": {
+        "type": "float",
+        "default": 0.25,
+        "min": 0,
+        "max": 1
+      },
+      "MASTER_FACE_IMAGE": {
+        "type": "string",
+        "default": "",
+        "modelCategory": "input_image"
+      },
+      "REACTOR_VISIBILITY": {
+        "type": "float",
+        "default": 0.55,
+        "min": 0.1,
+        "max": 1.0
+      },
+      "STRUCTURE_REFERENCE_IMAGE": {
+        "type": "string",
+        "default": "",
+        "modelCategory": "input_image"
+      },
+      "DENOISE": {
+        "type": "float",
+        "default": 0.77,
+        "min": 0.55,
+        "max": 0.92
+      },
+      "CLONE_SCHEDULER": {
+        "type": "string",
+        "default": "simple"
+      }
+    },
+    "features": {
+      "hiresFix": {
+        "default": false,
+        "description": "Hi-res second pass: 4x model upscale to 1.5x, then a low-denoise Flux re-sample that redraws real skin/hair/fabric detail at the larger size"
+      },
+      "faceDetailer": {
+        "default": true,
+        "description": "FaceDetailer pass (face_yolov8m, low denoise) for eyes/lips without overwriting skin texture"
+      },
+      "upscale": {
+        "default": false,
+        "description": "4x model upscale then lanczos downscale to the social target size"
+      },
+      "detailDaemon": {
+        "default": true,
+        "description": "ComfyUI-Detail-Daemon: lowers the noise the sampler removes mid-schedule so real skin, hair and fabric detail is kept, at no extra render time"
+      },
+      "reactorMasterFace": {
+        "default": false,
+        "description": "ReActor face swap from the fictional character's OWN master_face.png (set by the planner from the character record; no external faces). Runs before FaceDetailer, which then smooths the seam at 0.28 denoise."
+      }
+    },
+    "loraAnchors": [
+      {
+        "node": "1",
+        "mode": "model"
+      }
+    ]
+  },
+  "1": {
+    "class_type": "UnetLoaderGGUF",
+    "inputs": {
+      "unet_name": "{{UNET_NAME}}"
+    },
+    "_meta": {
+      "title": "Flux GGUF UNet (LoRA anchor)"
+    }
+  },
+  "2": {
+    "class_type": "DualCLIPLoaderGGUF",
+    "inputs": {
+      "clip_name1": "{{CLIP_T5_NAME}}",
+      "clip_name2": "{{CLIP_L_NAME}}",
+      "type": "flux"
+    },
+    "_meta": {
+      "title": "T5-XXL GGUF + CLIP-L"
+    }
+  },
+  "3": {
+    "class_type": "VAELoader",
+    "inputs": {
+      "vae_name": "{{VAE_NAME}}"
+    },
+    "_meta": {
+      "title": "Flux VAE"
+    }
+  },
+  "4": {
+    "class_type": "CLIPTextEncode",
+    "inputs": {
+      "text": "{{POSITIVE_PROMPT}}",
+      "clip": [
+        "2",
+        0
+      ]
+    },
+    "_meta": {
+      "title": "Positive prompt (natural prose)"
+    }
+  },
+  "5": {
+    "class_type": "FluxGuidance",
+    "inputs": {
+      "conditioning": [
+        "4",
+        0
+      ],
+      "guidance": "{{GUIDANCE}}"
+    },
+    "_meta": {
+      "title": "Flux guidance (low = less AI sheen)"
+    }
+  },
+  "6": {
+    "class_type": "BasicGuider",
+    "inputs": {
+      "model": [
+        "1",
+        0
+      ],
+      "conditioning": [
+        "5",
+        0
+      ]
+    },
+    "_meta": {
+      "title": "Guider"
+    }
+  },
+  "7": {
+    "class_type": "RandomNoise",
+    "inputs": {
+      "noise_seed": "{{SEED}}"
+    },
+    "_meta": {
+      "title": "Seed"
+    }
+  },
+  "8": {
+    "class_type": "KSamplerSelect",
+    "inputs": {
+      "sampler_name": "{{SAMPLER}}"
+    },
+    "_meta": {
+      "title": "Sampler"
+    }
+  },
+  "9": {
+    "class_type": "BasicScheduler",
+    "inputs": {
+      "model": [
+        "62",
+        0
+      ],
+      "scheduler": "{{CLONE_SCHEDULER}}",
+      "steps": "{{STEPS}}",
+      "denoise": "{{DENOISE}}"
+    },
+    "_meta": {
+      "title": "Scheduler (partial denoise 0.72-0.82 keeps the photo's structure)"
+    }
+  },
+  "10": {
+    "class_type": "VAEEncode",
+    "inputs": {
+      "pixels": [
+        "61",
+        0
+      ],
+      "vae": [
+        "3",
+        0
+      ]
+    },
+    "_meta": {
+      "title": "Encode reference as the img2img base (batch of 1)"
+    }
+  },
+  "11": {
+    "class_type": "SamplerCustomAdvanced",
+    "inputs": {
+      "noise": [
+        "7",
+        0
+      ],
+      "guider": [
+        "6",
+        0
+      ],
+      "sampler": [
+        "50",
+        0
+      ],
+      "sigmas": [
+        "9",
+        0
+      ],
+      "latent_image": [
+        "10",
+        0
+      ]
+    },
+    "_meta": {
+      "title": "Sample"
+    }
+  },
+  "12": {
+    "class_type": "VAEDecode",
+    "inputs": {
+      "samples": [
+        "11",
+        0
+      ],
+      "vae": [
+        "3",
+        0
+      ]
+    },
+    "_meta": {
+      "title": "Decode"
+    }
+  },
+  "13": {
+    "class_type": "UpscaleModelLoader",
+    "inputs": {
+      "model_name": "{{UPSCALE_MODEL}}"
+    },
+    "_meta": {
+      "title": "Hi-res: upscale model",
+      "pf": {
+        "optional": "hiresFix"
+      }
+    }
+  },
+  "14": {
+    "class_type": "ImageUpscaleWithModel",
+    "inputs": {
+      "upscale_model": [
+        "13",
+        0
+      ],
+      "image": [
+        "12",
+        0
+      ]
+    },
+    "_meta": {
+      "title": "Hi-res: model upscale",
+      "pf": {
+        "optional": "hiresFix",
+        "bypass": {
+          "0": "image"
+        }
+      }
+    }
+  },
+  "15": {
+    "class_type": "ImageScale",
+    "inputs": {
+      "image": [
+        "14",
+        0
+      ],
+      "upscale_method": "lanczos",
+      "width": "{{HIRES_WIDTH}}",
+      "height": "{{HIRES_HEIGHT}}",
+      "crop": "disabled"
+    },
+    "_meta": {
+      "title": "Hi-res: scale to 1.5x",
+      "pf": {
+        "optional": "hiresFix",
+        "bypass": {
+          "0": "image"
+        }
+      }
+    }
+  },
+  "16": {
+    "class_type": "VAEEncode",
+    "inputs": {
+      "pixels": [
+        "15",
+        0
+      ],
+      "vae": [
+        "3",
+        0
+      ]
+    },
+    "_meta": {
+      "title": "Hi-res: encode",
+      "pf": {
+        "optional": "hiresFix"
+      }
+    }
+  },
+  "17": {
+    "class_type": "BasicScheduler",
+    "inputs": {
+      "model": [
+        "1",
+        0
+      ],
+      "scheduler": "{{SCHEDULER}}",
+      "steps": "{{HIRES_STEPS}}",
+      "denoise": "{{HIRES_DENOISE}}"
+    },
+    "_meta": {
+      "title": "Hi-res: partial-denoise schedule",
+      "pf": {
+        "optional": "hiresFix"
+      }
+    }
+  },
+  "18": {
+    "class_type": "SamplerCustomAdvanced",
+    "inputs": {
+      "noise": [
+        "7",
+        0
+      ],
+      "guider": [
+        "6",
+        0
+      ],
+      "sampler": [
+        "8",
+        0
+      ],
+      "sigmas": [
+        "17",
+        0
+      ],
+      "latent_image": [
+        "16",
+        0
+      ]
+    },
+    "_meta": {
+      "title": "Hi-res: re-sample detail",
+      "pf": {
+        "optional": "hiresFix"
+      }
+    }
+  },
+  "19": {
+    "class_type": "VAEDecode",
+    "inputs": {
+      "samples": [
+        "18",
+        0
+      ],
+      "vae": [
+        "3",
+        0
+      ]
+    },
+    "_meta": {
+      "title": "Hi-res: decode",
+      "pf": {
+        "optional": "hiresFix"
+      }
+    }
+  },
+  "24": {
+    "class_type": "ImageCompositeMasked",
+    "inputs": {
+      "destination": [
+        "15",
+        0
+      ],
+      "source": [
+        "19",
+        0
+      ],
+      "x": 0,
+      "y": 0,
+      "resize_source": false
+    },
+    "_meta": {
+      "title": "Hi-res result (full-frame paste; bypasses to the base decode when hiresFix is off)",
+      "pf": {
+        "optional": "hiresFix",
+        "bypass": {
+          "0": "destination"
+        }
+      }
+    }
+  },
+  "20": {
+    "class_type": "CLIPTextEncode",
+    "inputs": {
+      "text": "",
+      "clip": [
+        "2",
+        0
+      ]
+    },
+    "_meta": {
+      "title": "Empty negative for detailer (Flux ignores CFG negatives at cfg 1)",
+      "pf": {
+        "optional": "faceDetailer"
+      }
+    }
+  },
+  "21": {
+    "class_type": "UltralyticsDetectorProvider",
+    "inputs": {
+      "model_name": "{{FACE_DETECTOR}}"
+    },
+    "_meta": {
+      "title": "Face detector",
+      "pf": {
+        "optional": "faceDetailer"
+      }
+    }
+  },
+  "22": {
+    "class_type": "FaceDetailer",
+    "inputs": {
+      "image": [
+        "91",
+        0
+      ],
+      "model": [
+        "1",
+        0
+      ],
+      "clip": [
+        "2",
+        0
+      ],
+      "vae": [
+        "3",
+        0
+      ],
+      "guide_size": 512,
+      "guide_size_for": true,
+      "max_size": 1024,
+      "seed": "{{SEED}}",
+      "steps": "{{DETAILER_STEPS}}",
+      "cfg": 1.0,
+      "sampler_name": "{{SAMPLER}}",
+      "scheduler": "{{SCHEDULER}}",
+      "positive": [
+        "5",
+        0
+      ],
+      "negative": [
+        "20",
+        0
+      ],
+      "denoise": "{{FACE_DENOISE}}",
+      "feather": 5,
+      "noise_mask": true,
+      "force_inpaint": true,
+      "bbox_threshold": 0.5,
+      "bbox_dilation": 10,
+      "bbox_crop_factor": 3.0,
+      "sam_detection_hint": "center-1",
+      "sam_dilation": 0,
+      "sam_threshold": 0.93,
+      "sam_bbox_expansion": 0,
+      "sam_mask_hint_threshold": 0.7,
+      "sam_mask_hint_use_negative": "False",
+      "drop_size": 10,
+      "bbox_detector": [
+        "21",
+        0
+      ],
+      "wildcard": "",
+      "cycle": 1
+    },
+    "_meta": {
+      "title": "FaceDetailer (eyes/lips, keeps pores)",
+      "pf": {
+        "optional": "faceDetailer",
+        "bypass": {
+          "0": "image"
+        }
+      }
+    }
+  },
+  "30": {
+    "class_type": "UpscaleModelLoader",
+    "inputs": {
+      "model_name": "{{UPSCALE_MODEL}}"
+    },
+    "_meta": {
+      "title": "Upscale model",
+      "pf": {
+        "optional": "upscale"
+      }
+    }
+  },
+  "31": {
+    "class_type": "ImageUpscaleWithModel",
+    "inputs": {
+      "upscale_model": [
+        "30",
+        0
+      ],
+      "image": [
+        "22",
+        0
+      ]
+    },
+    "_meta": {
+      "title": "Model upscale",
+      "pf": {
+        "optional": "upscale",
+        "bypass": {
+          "0": "image"
+        }
+      }
+    }
+  },
+  "32": {
+    "class_type": "ImageScale",
+    "inputs": {
+      "image": [
+        "31",
+        0
+      ],
+      "upscale_method": "lanczos",
+      "width": "{{OUTPUT_WIDTH}}",
+      "height": "{{OUTPUT_HEIGHT}}",
+      "crop": "center"
+    },
+    "_meta": {
+      "title": "Downscale to social size",
+      "pf": {
+        "optional": "upscale",
+        "bypass": {
+          "0": "image"
+        }
+      }
+    }
+  },
+  "40": {
+    "class_type": "SaveImage",
+    "inputs": {
+      "images": [
+        "32",
+        0
+      ],
+      "filename_prefix": "{{FILENAME_PREFIX}}"
+    },
+    "_meta": {
+      "title": "Save raw output"
+    }
+  },
+  "50": {
+    "class_type": "DetailDaemonSamplerNode",
+    "inputs": {
+      "sampler": [
+        "8",
+        0
+      ],
+      "detail_amount": "{{DETAIL_AMOUNT}}",
+      "start": 0.2,
+      "end": 0.8,
+      "bias": 0.15,
+      "exponent": 1.0,
+      "start_offset": 0.0,
+      "end_offset": 0.0,
+      "fade": 0.0,
+      "smooth": true,
+      "cfg_scale_override": 0
+    },
+    "_meta": {
+      "title": "Detail Daemon (natural micro-detail without a second pass)",
+      "pf": {
+        "optional": "detailDaemon",
+        "bypass": {
+          "0": "sampler"
+        }
+      }
+    }
+  },
+  "90": {
+    "class_type": "LoadImage",
+    "inputs": {
+      "image": "{{MASTER_FACE_IMAGE}}"
+    },
+    "_meta": {
+      "title": "Character master face (from the character record only)",
+      "pf": {
+        "optional": "reactorMasterFace"
+      }
+    }
+  },
+  "91": {
+    "class_type": "ReActorFaceSwap",
+    "inputs": {
+      "enabled": true,
+      "input_image": [
+        "24",
+        0
+      ],
+      "source_image": [
+        "90",
+        0
+      ],
+      "swap_model": "inswapper_128.onnx",
+      "facedetection": "retinaface_resnet50",
+      "face_restore_model": "none",
+      "face_restore_visibility": "{{REACTOR_VISIBILITY}}",
+      "codeformer_weight": 0.5,
+      "detect_gender_input": "no",
+      "detect_gender_source": "no",
+      "input_faces_index": "0",
+      "source_faces_index": "0",
+      "console_log_level": 1
+    },
+    "_meta": {
+      "title": "ReActor: character master face only",
+      "pf": {
+        "optional": "reactorMasterFace",
+        "bypass": {
+          "0": "input_image"
+        }
+      }
+    }
+  },
+  "60": {
+    "class_type": "LoadImage",
+    "inputs": {
+      "image": "{{STRUCTURE_REFERENCE_IMAGE}}"
+    },
+    "_meta": {
+      "title": "Real reference photo (posture, angle, light)"
+    }
+  },
+  "61": {
+    "class_type": "ImageScale",
+    "inputs": {
+      "image": [
+        "60",
+        0
+      ],
+      "upscale_method": "lanczos",
+      "width": "{{WIDTH}}",
+      "height": "{{HEIGHT}}",
+      "crop": "center"
+    },
+    "_meta": {
+      "title": "Fit reference to the phone canvas"
+    }
+  },
+  "62": {
+    "class_type": "ModelSamplingFlux",
+    "inputs": {
+      "model": [
+        "1",
+        0
+      ],
+      "max_shift": 0.0,
+      "base_shift": 0.0,
+      "width": "{{WIDTH}}",
+      "height": "{{HEIGHT}}"
+    },
+    "_meta": {
+      "title": "Linear sigma schedule for the clone pass only (shift 0): denoise 0.77 really starts at 77% noise"
+    }
+  }
+}

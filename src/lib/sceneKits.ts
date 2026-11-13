@@ -13,6 +13,11 @@ export interface SceneKit {
   sdxl: string;
   /** Extra negative phrases for SDXL. */
   negative: string;
+  /**
+   * Room + lighting only (no pose or framing words). Structure Clone "New-Room" mode adds this when the
+   * room description is left blank: the posture comes from the reference photo, the room from the kit.
+   */
+  room: { flux: string; sdxl: string };
   recommendedEngine: "A" | "B";
   /** Default canvas: 4:5 feed or 9:16 story. */
   aspect: "4:5" | "9:16";
@@ -33,6 +38,10 @@ export const SCENE_KITS: SceneKit[] = [
       "mirror selfie, full-length bedroom mirror, phone held at chest, off-center handheld framing, dust specks on mirror glass, " +
       "unmade rumpled bedsheets, phone charger cord on nightstand, warm dim bedside lamp, mixed ambient light, candid smartphone photo",
     negative: "studio backdrop, ring light, perfect symmetry",
+    room: {
+      flux: "A lived-in bedroom with unmade rumpled bedsheets and a phone charger cord on the nightstand, lit by a warm dim bedside lamp mixed with ambient room light.",
+      sdxl: "lived-in bedroom, unmade rumpled bedsheets, phone charger cord on nightstand, warm dim bedside lamp, mixed ambient light",
+    },
     recommendedEngine: "A",
     aspect: "4:5",
     finisherPreset: "iphone_mirror_selfie",
@@ -49,6 +58,10 @@ export const SCENE_KITS: SceneKit[] = [
       "high angle selfie, pov arm extended, phone just out of frame, 24mm wide angle phone lens, foreshortening, lying on messy cotton pillows, " +
       "soft dim lamp glow, warm shadows, casual unposed expression, smartphone snapshot",
     negative: "professional photoshoot, posed, glamour lighting",
+    room: {
+      flux: "A bed with messy cotton pillows in a dim bedroom, soft lamp glow with warm shadows.",
+      sdxl: "bed with messy cotton pillows, dim bedroom, soft lamp glow, warm shadows",
+    },
     recommendedEngine: "A",
     aspect: "4:5",
     finisherPreset: "iphone_dim_bedroom_high_iso",
@@ -64,6 +77,10 @@ export const SCENE_KITS: SceneKit[] = [
       "pov smartphone shot, angled downward, close-up framing, wide angle phone lens, slight handheld tilt, natural indoor shadow falloff, " +
       "authentic skin texture, visible pores, natural creases",
     negative: "smooth skin, beauty filter, airbrushed",
+    room: {
+      flux: "An ordinary lived-in indoor room with soft ambient light and natural indoor shadow falloff.",
+      sdxl: "ordinary lived-in indoor room, soft ambient light, natural indoor shadow falloff",
+    },
     recommendedEngine: "A",
     aspect: "4:5",
     finisherPreset: "iphone_indoor_warm",
@@ -79,6 +96,10 @@ export const SCENE_KITS: SceneKit[] = [
       "bathroom mirror selfie, warm overhead vanity bulbs, slight highlight bloom on skin, towel and skincare bottle on counter at frame edge, " +
       "candid phone camera colour balance, everyday bathroom",
     negative: "luxury hotel, staged set, studio lighting",
+    room: {
+      flux: "An everyday bathroom with a towel and a skincare bottle on the counter, warm overhead vanity bulbs with a slight highlight bloom.",
+      sdxl: "everyday bathroom, towel and skincare bottle on counter, warm overhead vanity bulbs, slight highlight bloom",
+    },
     recommendedEngine: "A",
     aspect: "9:16",
     finisherPreset: "iphone_mirror_selfie",
@@ -94,6 +115,10 @@ export const SCENE_KITS: SceneKit[] = [
       "direct smartphone led flash, dim room at night, bright foreground subject, hard shadow on bedroom wall, rapid light falloff, " +
       "specular flash reflection on skin, raw late-night snapshot",
     negative: "softbox, cinematic lighting, golden hour",
+    room: {
+      flux: "A dim bedroom at night lit only by a direct smartphone LED flash, with a hard shadow and rapid light falloff on the wall behind.",
+      sdxl: "dim bedroom at night, direct smartphone led flash, hard shadow on bedroom wall, rapid light falloff",
+    },
     recommendedEngine: "A",
     aspect: "4:5",
     finisherPreset: "iphone_flash_night",
@@ -109,6 +134,10 @@ export const SCENE_KITS: SceneKit[] = [
       "lounging on fabric sofa, knees up, leaning back, ambient tv screen glow, warm floor lamp, casual handheld snapshot angle, " +
       "lived-in apartment, everyday clutter in background",
     negative: "showroom, catalog photo, staged interior",
+    room: {
+      flux: "A lived-in apartment living room with a fabric sofa and everyday clutter, ambient TV screen glow mixed with a warm floor lamp.",
+      sdxl: "lived-in apartment living room, fabric sofa, everyday clutter, ambient tv screen glow, warm floor lamp",
+    },
     recommendedEngine: "B",
     aspect: "4:5",
     finisherPreset: "iphone_indoor_warm",

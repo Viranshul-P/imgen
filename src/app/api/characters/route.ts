@@ -1,6 +1,7 @@
 import type { NextRequest } from "next/server";
 import { errorResponse, json, readJson, requireString } from "@/lib/api";
 import { validateSubTokens } from "@/lib/buckets";
+import { MASTER_FACE_RULE, isGeneratedForCharacter } from "@/lib/masterFace";
 import { prisma } from "@/lib/prisma";
 import { BadRequestError } from "@/lib/types";
 import { LORA_STRENGTH_MAX, LORA_STRENGTH_MIN, type LoraSpec } from "@/lib/workflowInjector";
@@ -43,7 +44,7 @@ function cleanSubTokens(input: Record<string, string | null>): Record<string, st
   return out;
 }
 
-async function fields(body: CharacterBody) {
+async function fields(body: CharacterBody, characterId: string | null) {
   if (body.triggerToken !== undefined && !TRIGGER_RE.test(body.triggerToken)) {
     throw new BadRequestError("triggerToken must be 3-40 chars of a-z, 0-9 or _ (e.g. v1ra_person)");
   }
@@ -53,6 +54,7 @@ async function fields(body: CharacterBody) {
     else {
       const asset = await prisma.asset.findUnique({ where: { id: body.masterFaceAssetId } });
       if (!asset) throw new BadRequestError("master face asset not found");
+      if (!isGeneratedForCharacter(asset, characterId)) throw new BadRequestError(MASTER_FACE_RULE);
       masterFacePath = asset.path;
     }
   }
@@ -89,7 +91,7 @@ export async function POST(request: NextRequest) {
     const body = await readJson<CharacterBody>(request);
     requireString(body.name, "name");
     requireString(body.triggerToken, "triggerToken");
-    const data = await fields(body);
+    const data = await fields(body, null);
     const created = await prisma.character.create({ data: { name: data.name as string, triggerToken: data.triggerToken as string, ...data } });
     return json(created, 201);
   } catch (err) {
@@ -102,7 +104,7 @@ export async function PATCH(request: NextRequest) {
   try {
     const body = await readJson<CharacterBody>(request);
     const id = requireString(body.id, "id");
-    const updated = await prisma.character.update({ where: { id }, data: await fields(body) });
+    const updated = await prisma.character.update({ where: { id }, data: await fields(body, id) });
     return json(updated);
   } catch (err) {
     return errorResponse(err);

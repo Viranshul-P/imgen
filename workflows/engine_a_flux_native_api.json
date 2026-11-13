@@ -115,6 +115,17 @@
       "UNET_WEIGHT_DTYPE": {
         "type": "string",
         "default": "default"
+      },
+      "MASTER_FACE_IMAGE": {
+        "type": "string",
+        "default": "",
+        "modelCategory": "input_image"
+      },
+      "REACTOR_VISIBILITY": {
+        "type": "float",
+        "default": 0.55,
+        "min": 0.1,
+        "max": 1.0
       }
     },
     "features": {
@@ -133,6 +144,10 @@
       "detailDaemon": {
         "default": true,
         "description": "ComfyUI-Detail-Daemon: lowers the noise the sampler removes mid-schedule so real skin, hair and fabric detail is kept, at no extra render time"
+      },
+      "reactorMasterFace": {
+        "default": false,
+        "description": "ReActor face swap from the fictional character's OWN master_face.png (set by the planner from the character record; no external faces). Runs before FaceDetailer, which then smooths the seam at 0.28 denoise."
       }
     },
     "loraAnchors": [
@@ -502,7 +517,7 @@
     "class_type": "FaceDetailer",
     "inputs": {
       "image": [
-        "24",
+        "91",
         0
       ],
       "model": [
@@ -657,6 +672,51 @@
         "optional": "detailDaemon",
         "bypass": {
           "0": "sampler"
+        }
+      }
+    }
+  },
+  "90": {
+    "class_type": "LoadImage",
+    "inputs": {
+      "image": "{{MASTER_FACE_IMAGE}}"
+    },
+    "_meta": {
+      "title": "Character master face (from the character record only)",
+      "pf": {
+        "optional": "reactorMasterFace"
+      }
+    }
+  },
+  "91": {
+    "class_type": "ReActorFaceSwap",
+    "inputs": {
+      "enabled": true,
+      "input_image": [
+        "24",
+        0
+      ],
+      "source_image": [
+        "90",
+        0
+      ],
+      "swap_model": "inswapper_128.onnx",
+      "facedetection": "retinaface_resnet50",
+      "face_restore_model": "none",
+      "face_restore_visibility": "{{REACTOR_VISIBILITY}}",
+      "codeformer_weight": 0.5,
+      "detect_gender_input": "no",
+      "detect_gender_source": "no",
+      "input_faces_index": "0",
+      "source_faces_index": "0",
+      "console_log_level": 1
+    },
+    "_meta": {
+      "title": "ReActor: character master face only",
+      "pf": {
+        "optional": "reactorMasterFace",
+        "bypass": {
+          "0": "input_image"
         }
       }
     }

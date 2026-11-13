@@ -1,9 +1,10 @@
 "use client";
 
-import { Activity, Cloud, Cpu, Layers, RefreshCw, Trash2 } from "lucide-react";
+import { Activity, Cloud, Cpu, Download, Layers, RefreshCw, Trash2 } from "lucide-react";
 import * as React from "react";
 import { Badge, Button, Input, Progress, Select } from "@/components/ui/primitives";
 import { cn, formatBytes } from "@/lib/utils";
+import { ModelDownloader } from "./ModelDownloader";
 import { api, postJson, useStudio } from "./StudioContext";
 
 interface StatusResponse {
@@ -36,6 +37,7 @@ export function SystemStatusHeader() {
   const [status, setStatus] = React.useState<StatusResponse | null>(null);
   const [busy, setBusy] = React.useState<"free" | "models" | "endpoint" | null>(null);
   const [urlEdit, setUrlEdit] = React.useState<string | null>(null);
+  const [showDownloader, setShowDownloader] = React.useState(false);
 
   React.useEffect(() => {
     let alive = true;
@@ -99,6 +101,7 @@ export function SystemStatusHeader() {
 
   const comfy = status?.comfy;
   return (
+    <>
     <header className="sticky top-0 z-20 border-b border-border bg-background/95 backdrop-blur">
       <div className="mx-auto flex max-w-[1400px] flex-wrap items-center gap-4 px-4 py-3">
         <div className="flex items-center gap-2">
@@ -163,6 +166,9 @@ export function SystemStatusHeader() {
           <Button size="sm" variant="outline" onClick={() => void reloadModels()} disabled={busy !== null} title={catalog ? `Last refresh ${new Date(catalog.fetchedAt).toLocaleTimeString()}` : undefined}>
             <RefreshCw className={cn(busy === "models" && "animate-spin")} /> Refresh Models
           </Button>
+          <Button size="sm" variant="outline" onClick={() => setShowDownloader(true)} title="Download a checkpoint or LoRA from Civitai or a URL">
+            <Download /> Download Model
+          </Button>
           <Button size="sm" variant="secondary" onClick={() => void freeVram()} disabled={busy !== null || !comfy?.up}>
             <Trash2 /> Free VRAM
           </Button>
@@ -176,5 +182,7 @@ export function SystemStatusHeader() {
         </div>
       ) : null}
     </header>
+    {showDownloader ? <ModelDownloader onClose={() => setShowDownloader(false)} /> : null}
+    </>
   );
 }

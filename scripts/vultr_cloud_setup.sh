@@ -194,6 +194,23 @@ exec "$COMFY_VENV/bin/python" main.py --listen 127.0.0.1 --port 8188 --disable-a
 EOF
 chmod +x "$START_SH"
 
+# ---------------------------------------------------------------------------------------------- model fetcher (studio downloads)
+# The studio's "Download Custom Model / LoRA" dialog sends Remote-mode downloads to this helper on 127.0.0.1:8190.
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+FETCHER_PY="$WORKSPACE/cloud_model_fetcher.py"
+FETCH_SH="$WORKSPACE/start_model_fetcher.sh"
+if [ -f "$SCRIPT_DIR/cloud_model_fetcher.py" ]; then
+  [ "$SCRIPT_DIR/cloud_model_fetcher.py" -ef "$FETCHER_PY" ] || cp "$SCRIPT_DIR/cloud_model_fetcher.py" "$FETCHER_PY"
+else
+  warn "cloud_model_fetcher.py was not copied next to this script; the studio's model download dialog will not work in Remote mode (scp it to $WORKSPACE and re-run)"
+fi
+cat > "$FETCH_SH" <<EOF
+#!/usr/bin/env bash
+# Studio model downloads (Civitai / URL) into $COMFY_DIR/models/{checkpoints,loras}; 127.0.0.1:8190 only.
+exec python3 "$FETCHER_PY" --models-dir "$COMFY_DIR/models" --port 8190
+EOF
+chmod +x "$FETCH_SH"
+
 # ---------------------------------------------------------------------------------------------- trainers
 if [ "$DO_TRAINING" -eq 1 ]; then
   say "ai-toolkit (Flux LoRA training)"
@@ -242,6 +259,11 @@ if [ "$DO_START" -eq 1 ]; then
   tmux kill-session -t comfy 2>/dev/null || true
   tmux new-session -d -s comfy "bash $START_SH 2>&1 | tee $WORKSPACE/comfyui.log"
   echo "log: $WORKSPACE/comfyui.log"
+  if [ -f "$FETCHER_PY" ]; then
+    tmux kill-session -t fetcher 2>/dev/null || true
+    tmux new-session -d -s fetcher "bash $FETCH_SH 2>&1 | tee $WORKSPACE/model_fetcher.log"
+    echo "model fetcher log: $WORKSPACE/model_fetcher.log"
+  fi
 fi
 
 PUBLIC_IP="$(curl -fsS --max-time 5 https://api.ipify.org 2>/dev/null || hostname -I | awk '{print $1}')"
@@ -249,11 +271,13 @@ SSH_USER="$(id -un)"
 say "Done"
 cat <<EOF
 
-1. Start ComfyUI on this machine (skip if you used --start):
-     tmux new -s comfy 'bash $START_SH'      # detach with Ctrl+B then D
+1. Start ComfyUI and the model fetcher on this machine (skip if you used --start):
+     tmux new -d -s comfy 'bash $START_SH'
+     tmux new -d -s fetcher 'bash $FETCH_SH'
 
 2. On YOUR PC (PowerShell, Command Prompt or any terminal), open the tunnel and leave it running:
-     ssh -N -L 8189:127.0.0.1:8188 ${SSH_USER}@${PUBLIC_IP}
+     ssh -N -L 8189:127.0.0.1:8188 -L 8190:127.0.0.1:8190 ${SSH_USER}@${PUBLIC_IP}
+   (8189 = the cloud ComfyUI, 8190 = the studio's "Download Custom Model / LoRA" dialog)
 
 3. In the PersonaForge studio header choose "Remote Cloud GPU Tunnel" (URL http://127.0.0.1:8189).
    Pick the native FP16 Flux UNet (flux1-dev.safetensors) in the Shoot tab to use the full-precision model.

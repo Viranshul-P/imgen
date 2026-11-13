@@ -287,3 +287,44 @@
 - `Comfyui_segformer_b2_clothes` pins `transformers==4.33.2`; installing it would downgrade ComfyUI's transformers 5.x, so its requirements.txt is skipped. The pack also loads `segformer_b3_fashion` at import, so that model is downloaded too, or the whole pack fails to import.
 - Fixed while testing: the character editor re-sent `defaultLoras` as a string on every save (double-encoding it); it now sends only the fields it edits.
 - Validator: 25/25 static combinations; smoke 6 passed, 3 skipped by design (needs a real face, or the FP16 Flux model that is only on the cloud machine).
+
+---
+## v2.6 — final polish, Civitai downloader & cloud automation (2026-11-13, requested by the user)
+1. **ReActor with the character's own master face only** (resolves v2.5 upgrade 6)
+   - New option `enableReactorMasterFace` (default off) with checkboxes in the Shoot and Arc tabs. Optional `reactorMasterFace` block in Engine A (GGUF and native), Engine B and the SDXL Structure Clone: `LoadImage(master face)` → `ReActorFaceSwap` (inswapper_128, retinaface, `face_restore_model: none`, `face_restore_visibility: 0.55`) → FaceDetailer, forced on at **0.28** denoise.
+   - The source image never comes from the request. The planner reads `masterFacePath` from the character record and re-checks it at plan time (`src/lib/masterFace.ts`): it must be a generated asset (raw / finished / dataset) of that same character.
+   - The character API also refuses an uploaded photo as a master face, a gap that existed before.
+   - `enableReactorSwap` (arbitrary faces) is still rejected. `contentSafety.ts` is unchanged.
+   - Rejected with 400: Prompt tab (no character), Engine C (the face is pixel-locked anyway; the Arc tab disables the box in inpaint mode), no character, no master face.
+   - `inswapper_128.onnx` copied from the Public install into the local `models/insightface` (ReActor only searches its own folder; SHA-256 e4a3f08c…; the Public install was not modified). ComfyUI was restarted so the model is listed.
+   - Verified: an Engine B render with ReActor ran 115 s, peak 7.1 GB, and the face matches the master face.
+2. **Download Custom Model / LoRA** (header button → dialog; `POST/GET /api/comfy/download-model`, `src/lib/modelDownload.ts`)
+   - Accepts a Civitai version ID, a Civitai link with `?modelVersionId=` or `/api/download/models/<id>`, or any https `.safetensors` URL. Hugging Face `/blob/` links are rewritten to `/resolve/`.
+   - Target folder: checkpoints / loras. Shows a live %, then refreshes `/object_info` and the dropdowns when done.
+   - Civitai metadata gives the file name, SHA-256 (verified) and type; a type/folder mismatch is warned.
+   - Only `.safetensors` is accepted. Downloads resume from `.part`, and free disk space is checked first.
+   - Tokens go only to their own host and are dropped on redirects (redirects are followed by hand). An optional CIVITAI_TOKEN is saved to `.env.local`.
+   - **Remote mode:** new `scripts/cloud_model_fetcher.py` (stdlib, 127.0.0.1:8190 only) downloads straight into the cloud ComfyUI. `vultr_cloud_setup.sh` installs it and starts it with `--start`; the tunnel command now adds `-L 8190:127.0.0.1:8190`.
+   - Verified:
+     - Civitai metadata resolution (version 128713 → DreamShaper8_pruned.safetensors + SHA-256)
+     - local download of a 520 KB HF file through the CDN redirect; it showed up in the LoRA list and a duplicate was refused
+     - remote download through the fetcher, plus the fetcher-unreachable message
+     - fetcher: http / bad folder / `../` names / SHA mismatch handled
+   - Not tested: a real Civitai binary download (no token was set and the test file would have been 2 GB).
+3. **Structure Clone upgrades**
+   - **Flux** (`engine_a_structure_clone`): reference → `VAEEncode` → partial-denoise schedule (0.72–0.82, default 0.77) → Detail Daemon. Hybrid only; New-Room needs the SDXL-only ControlNets and is rejected on Engine A. Shoot tab: the clone panel now shows for Engines A and B.
+   - **Deviation found in testing:** on Flux's default shifted beta schedule, "denoise 0.77" starts at ~95% noise. The first test came out as an unrelated illustration, and 0.62 kept the pose but not the room. The clone pass therefore uses a linear sigma schedule (`ModelSamplingFlux` shift 0 + `simple` scheduler) for its partial-denoise schedule only. With it, 0.77 kept the posture, camera angle, room and light (229 s, peak 7.1 GB). The outfit prompt is mostly overridden at this strength, the same as the SDXL hybrid.
+   - **Room text:** an optional room description field. In New-Room mode a blank field uses the scene kit's new room/lighting-only text (`room` in `sceneKits.ts`; no pose words). Hybrid mode keeps the photo's own room and adds no kit scene text.
+   - Verified: an SDXL New-Room render with a blank room got "dim bedroom at night, direct smartphone led flash…" and kept the reference posture.
+   - **Cloud configs:** 48/80 GB ai-toolkit Flux and the kohya SDXL config use rank 32, alpha 32, 2000 steps, a save every 250 steps, lr 1e-4 and bf16. The 24 GB Flux config keeps its 8-bit rank-16 recipe.
+   - **Captions:** every caption now starts `<trigger>, <bucket sub-token>, <class>, …`; overrides have their tokens moved to the front.
+4. **`run_cloud_training.sh`** in every cloud bundle (template `training/run_cloud_training.template.sh`)
+   - Pre-flight checks (venvs, HF token for Flux) → `POST /free {"unload_models":true,"free_memory":true}` → SDXL (kohya) → Flux (ai-toolkit; tier auto-detected from GPU memory or set with `FLUX_TIER`).
+   - The final LoRAs are copied to `/workspace/ComfyUI/models/loras/` and `/workspace/finished_loras/` (step checkpoints go to `finished_loras/checkpoints/`), then the PowerShell `scp` command for the laptop is printed.
+   - It rewrites the config paths if the bundle was unzipped elsewhere.
+   - Verified with a dry run in Git Bash using stub trainers: the real `/free` call against the local ComfyUI, the order, the dim-32 / 2000-step args, the 80gb auto-pick and the copies. **Not run on a real Vultr GPU.**
+
+**Fixed along the way**
+- v2.5 cloud bundles were written with CRLF line endings on Windows, so `kohya_sdxl_train.sh` would fail on Linux (`$'\r': command not found`). All bundle files and captions are now written LF-only. The zip stores Unix modes, so `.sh` files stay executable after `unzip`.
+
+**Checks:** tsc 0 errors · lint 0/0 · `npm run build` OK (0 warnings) · validator **28/28 static** (all-features-on includes ReActor), smoke 8 passed / 2 skipped by design · `bash -n` on both shell scripts · `py_compile` on both Python scripts.

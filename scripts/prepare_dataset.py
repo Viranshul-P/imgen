@@ -44,11 +44,15 @@ from download_models import ModelRoots, read_dotenv, resolve_comfy_dir  # noqa: 
 PRESETS = PROJECT / "training" / "presets"
 TARGET_STEPS_SDXL = 1400
 TARGET_STEPS_FLUX = 1200
-# Cloud bundle (48 GB / 80 GB cards): rank 32, alpha 32, 2000 steps, a checkpoint every 250 steps, lr 1e-4, bf16.
+# Cloud bundle (48 GB / 80 GB cards): rank 32, alpha 32, batch 2, 1200 steps, lr 1e-4, bf16. A checkpoint is saved every
+# 200 steps; run_cloud_training.sh keeps the ones from step 600 on (600, 800, 1000 and the final 1200).
+# 35-50 images at batch 2 x 1200 steps = 2400 samples, roughly 50-70 passes over the set.
 CLOUD_FULL_TIERS = ("48gb", "80gb")
 CLOUD_RANK = 32
-CLOUD_STEPS = 2000
-CLOUD_SAVE_EVERY = 250
+CLOUD_BATCH = 2
+CLOUD_STEPS = 1200
+CLOUD_SAVE_EVERY = 200
+CLOUD_KEEP_FROM = 600
 MIN_SIDE = 512
 TRIGGER_RE = re.compile(r"^[A-Za-z0-9_]{3,40}$")
 
@@ -449,7 +453,8 @@ def run_cloud_training_sh(trigger: str, root: str, local_loras: str) -> str:
     # The path lands inside an unquoted bash heredoc and a double-quoted scp argument.
     dest = dest.replace("$", "\\$").replace("`", "\\`").replace('"', "")
     text = RUN_TEMPLATE.read_text(encoding="utf-8").replace("\r\n", "\n")
-    return text.replace("@@TRIGGER@@", trigger).replace("@@ROOT@@", root).replace("@@LOCAL_LORAS@@", dest)
+    return (text.replace("@@TRIGGER@@", trigger).replace("@@ROOT@@", root).replace("@@LOCAL_LORAS@@", dest)
+            .replace("@@KEEP_FROM@@", str(CLOUD_KEEP_FROM)))
 
 
 def yaml_str(value: str) -> str:
@@ -458,7 +463,7 @@ def yaml_str(value: str) -> str:
 
 def ai_toolkit_yaml(tier: str, trigger: str, class_word: str, root: str, folder_paths: list[str], images: int) -> str:
     """ostris/ai-toolkit Flux.1-dev LoRA config (layout follows config/examples/train_lora_flux_24gb.yaml)."""
-    quantize, batch = {"24gb": ("true", 1), "48gb": ("false", 2), "80gb": ("false", 4)}[tier]
+    quantize, batch = {"24gb": ("true", 1), "48gb": ("false", CLOUD_BATCH), "80gb": ("false", CLOUD_BATCH)}[tier]
     if tier in CLOUD_FULL_TIERS:
         rank, steps, save_every = CLOUD_RANK, CLOUD_STEPS, CLOUD_SAVE_EVERY
     else:  # 24 GB (8-bit base): unchanged v2.5 recipe
@@ -521,7 +526,7 @@ config:
         quantize: {quantize}
       sample:
         sampler: "flowmatch"
-        sample_every: 250
+        sample_every: {save_every}
         sample_start_step: 0
         width: 1024
         height: 1024
@@ -566,15 +571,15 @@ def write_cloud_bundle(out: Path, summary: dict, folders: dict, custom_tokens: d
         write_lf(cloud / f"ai-toolkit_flux_{tier}.yaml", ai_toolkit_yaml(tier, trigger, class_word, root, list(cloud_folders.values()), images))
 
     sdxl_base = "/workspace/models/RealVisXL_V5.0_fp16.safetensors"
-    samples = CLOUD_STEPS * 4  # 2000 steps at batch 4 (48 GB and 80 GB cards)
+    samples = CLOUD_STEPS * CLOUD_BATCH  # 1200 steps at batch 2 (48 GB and 80 GB cards)
     subsets = [(p, f"{(sub_token_for(trigger, b, custom_tokens) or trigger)} {class_word}") for b, p in cloud_folders.items()]
     preset = json.loads((PRESETS / "kohya_sdxl_lora_8gb.json").read_text(encoding="utf-8"))
     write_lf(cloud / "dataset_sdxl.toml", dataset_toml(subsets, repeats, {"resolution": 1024, "min_bucket_reso": 640, "max_bucket_reso": 1536}))
     subs = {"TRIGGER": trigger, "OUTPUT_DIR": f"{root}/output", "SDXL_BASE": sdxl_base,
-            "DATASET_TOML": f"{root}/cloud/dataset_sdxl.toml", "MAX_STEPS": samples // 4}
+            "DATASET_TOML": f"{root}/cloud/dataset_sdxl.toml", "MAX_STEPS": CLOUD_STEPS}
     filled = fill(preset, subs)
     assert isinstance(filled, dict)
-    filled["args"]["train_batch_size"] = 4
+    filled["args"]["train_batch_size"] = CLOUD_BATCH
     filled["args"]["save_every_n_steps"] = CLOUD_SAVE_EVERY
     filled["args"]["max_train_steps"] = CLOUD_STEPS
     filled["args"]["network_dim"] = CLOUD_RANK
@@ -590,7 +595,7 @@ def write_cloud_bundle(out: Path, summary: dict, folders: dict, custom_tokens: d
     ot_cfg = fill(ot_preset, {"TRIGGER": trigger, "OUTPUT_DIR": f"{root}/output", "SDXL_BASE": sdxl_base,
                               "CONCEPTS_FILE": f"{root}/cloud/onetrainer_concepts.json", "EPOCHS": epochs})
     assert isinstance(ot_cfg, dict)
-    ot_cfg["batch_size"] = 4
+    ot_cfg["batch_size"] = CLOUD_BATCH
     write_lf(cloud / "onetrainer_sdxl_lora.json", json.dumps(ot_cfg, indent=2))
     concepts = [{"__version": 2, "name": sub_token_for(trigger, b, custom_tokens) or trigger, "path": p, "enabled": True,
                  "type": "STANDARD", "include_subdirectories": False, "balancing": float(repeats),
@@ -611,7 +616,8 @@ Every caption starts "{s['trigger']}, <bucket sub-token>, {s['class_tokens'].spl
 Sub-tokens:
 {tokens}
 
-Cloud settings (48 GB / 80 GB): rank 32, alpha 32, 2000 steps, a checkpoint every 250 steps, lr 1e-4, bf16.
+Cloud settings (48 GB / 80 GB): rank 32, alpha 32, batch 2, 1200 steps, lr 1e-4, bf16. A checkpoint every 200 steps;
+run_cloud_training.sh keeps steps 600, 800, 1000 and the final 1200.
 (The 24 GB Flux config keeps the 8-bit rank-16 recipe.)
 
 ONE COMMAND (after steps 1 and 2):
@@ -642,7 +648,7 @@ ONE COMMAND (after steps 1 and 2):
 
 Notes
 - Use the main trigger "{s['trigger']}" in prompts. Add a sub-token (for example {next(iter(s['sub_tokens'].values()), s['trigger'] + '_body')}) to emphasise that kind of framing.
-- Steps are starting points: watch the sample images ai-toolkit writes every 250 steps and keep the
+- Steps are starting points: watch the sample images ai-toolkit writes at every checkpoint and keep the
   checkpoint that still follows prompts. Over-trained LoRAs look stiff.
 - Stop the machine when you finish: cloud GPUs bill by the hour.
 

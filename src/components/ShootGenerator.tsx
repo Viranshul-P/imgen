@@ -459,7 +459,7 @@ export function ShootGenerator() {
               disabled={engine === "C" || !character?.masterFacePath}
               hint={
                 character?.masterFacePath
-                  ? "Source is always the character's own generated master_face.png (visibility 0.55, no face restore), then FaceDetailer at 0.28"
+                  ? "Source is always the character's own generated master_face.png; the swap is blended 60% over the original face, then FaceDetailer at 0.28"
                   : "Pick a master face in the Character tab first"
               }
             />

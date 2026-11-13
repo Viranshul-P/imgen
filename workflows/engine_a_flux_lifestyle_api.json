@@ -122,6 +122,12 @@
         "default": 0.55,
         "min": 0.1,
         "max": 1.0
+      },
+      "REACTOR_BLEND": {
+        "type": "float",
+        "default": 0.6,
+        "min": 0.0,
+        "max": 1.0
       }
     },
     "features": {
@@ -143,7 +149,7 @@
       },
       "reactorMasterFace": {
         "default": false,
-        "description": "ReActor face swap from the fictional character's OWN master_face.png (set by the planner from the character record; no external faces). Runs before FaceDetailer, which then smooths the seam at 0.28 denoise."
+        "description": "ReActor face swap from the fictional character's OWN master_face.png (set by the planner from the character record; no external faces), blended 60% over the pre-swap render (ImageBlend), then FaceDetailer at 0.28 smooths the seam."
       }
     },
     "loraAnchors": [
@@ -512,7 +518,7 @@
     "class_type": "FaceDetailer",
     "inputs": {
       "image": [
-        "91",
+        "92",
         0
       ],
       "model": [
@@ -712,6 +718,30 @@
         "optional": "reactorMasterFace",
         "bypass": {
           "0": "input_image"
+        }
+      }
+    }
+  },
+  "92": {
+    "class_type": "ImageBlend",
+    "inputs": {
+      "image1": [
+        "24",
+        0
+      ],
+      "image2": [
+        "91",
+        0
+      ],
+      "blend_factor": "{{REACTOR_BLEND}}",
+      "blend_mode": "normal"
+    },
+    "_meta": {
+      "title": "Partial-strength swap: 60% ReActor face over 40% of the pre-swap render",
+      "pf": {
+        "optional": "reactorMasterFace",
+        "bypass": {
+          "0": "image1"
         }
       }
     }

@@ -328,3 +328,10 @@
 - v2.5 cloud bundles were written with CRLF line endings on Windows, so `kohya_sdxl_train.sh` would fail on Linux (`$'\r': command not found`). All bundle files and captions are now written LF-only. The zip stores Unix modes, so `.sh` files stay executable after `unzip`.
 
 **Checks:** tsc 0 errors · lint 0/0 · `npm run build` OK (0 warnings) · validator **28/28 static** (all-features-on includes ReActor), smoke 8 passed / 2 skipped by design · `bash -n` on both shell scripts · `py_compile` on both Python scripts.
+
+## v2.6.1 — answers to the report's questions (2026-11-13)
+1. **Cloud training:** the 48/80 GB ai-toolkit Flux, kohya SDXL and OneTrainer cloud configs now use batch 2, 1200 steps and a save every 200 steps (samples too). Neither trainer can start saving at a given step, so `run_cloud_training.sh` keeps step checkpoints from `KEEP_FROM=600` on (600, 800, 1000 + the final 1200). The 24 GB config is unchanged.
+2. **ReActor at 60%:** `ImageBlend` (image1 = pre-swap, image2 = ReActor, factor `REACTOR_BLEND` 0.6, normal) is inserted between ReActor and FaceDetailer (0.28) in all five templates that have the ReActor block. It is part of the `reactorMasterFace` feature, so with the feature off the graph is unchanged.
+3. The Flux Structure Clone is unchanged (0.72–0.82 on the linear schedule), as answered.
+
+**Verified:** real Engine B + ReActor render at 60% blend: 41.6 s, peak 7.1 GB, partial-strength identity with no ghosting. Injected wiring checked with the feature on and off. Regenerated bundle values checked. The stub dry run kept exactly 600/800/1000 + finals. Validator 28/28 · tsc · lint · build clean.
